@@ -1,0 +1,69 @@
+# Rally access configuration.
+#
+# This TOML file is the SINGLE source of truth for the role → permission
+# catalog and the OIDC-group → role bindings. The access config loader in
+# internal/auth/accessconfig.go reads it once at startup; restart the
+# backend after editing. It is not read on every request.
+#
+# Permission reference — add new names in internal/domain/domain.go,
+# otherwise the loader rejects them.
+#
+#   Organization: org.view  org.manage
+#   Edition:      edition.view  edition.edit
+#   Members:      member.view  member.manage
+#   Audit:        audit.view
+#
+# NOTE: The parsing of this file is a stub in the current scaffold — see
+# accessconfig.go. The structure below is already in the final shape so
+# the TOML parser can be dropped in without a schema migration.
+
+# -------------------------------------------------------------------------
+# Roles
+# -------------------------------------------------------------------------
+
+[roles.organization_admin]
+permissions = [
+  "org.view", "org.manage",
+  "edition.view", "edition.edit",
+  "member.view", "member.manage",
+  "audit.view",
+]
+
+[roles.edition_organizer]
+permissions = [
+  "org.view",
+  "edition.view", "edition.edit",
+  "member.view", "audit.view",
+]
+
+[roles.programme_manager]
+permissions = ["org.view", "edition.view", "member.view"]
+
+[roles.reviewer]
+permissions = ["org.view", "edition.view"]
+
+[roles.submitter]
+permissions = ["org.view", "edition.view"]
+
+[roles.viewer]
+permissions = ["org.view", "edition.view"]
+
+# -------------------------------------------------------------------------
+# OIDC group → role bindings
+# -------------------------------------------------------------------------
+
+[[bindings]]
+group = "rally-admins"
+role = "organization_admin"
+
+[[bindings]]
+group = "rally-organizers"
+role = "edition_organizer"
+
+[[bindings]]
+group = "rally-programme"
+role = "programme_manager"
+
+[[bindings]]
+group = "rally-reviewers"
+role = "reviewer"

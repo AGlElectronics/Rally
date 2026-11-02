@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <script>
+      // Apply the saved theme BEFORE the SPA mounts so the initial paint
+      // doesn't flash the wrong palette. Keyed per product so a shared
+      // domain doesn't collide between Stash and Rally.
+      (function () {
+        try {
+          if (localStorage.getItem('rally-theme') === 'light') {
+            document.documentElement.classList.remove('dark');
+          } else {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#18181b" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <title>Rally</title>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

@@ -1,0 +1,50 @@
+# One-shot Goose migration runner. Must complete successfully before the
+# API Deployment rolls out — tie them together with an Argo CD PreSync hook
+# or a chart dependency. See docs/adr/0003-migrate-job.md.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rally-migrate
+  namespace: rally
+  labels:
+    app.kubernetes.io/name: rally
+    app.kubernetes.io/component: migrate
+  annotations:
+    # Argo CD users: run as a PreSync hook so the API never sees an
+    # out-of-date schema. Delete on success to keep the UI tidy.
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  backoffLimit: 1
+  # Make the Job disappear within an hour if it succeeded; failed Jobs stay
+  # around so the operator can `kubectl logs` them.
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rally
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: migrate
+          image: ghcr.io/aglelectronics/rally-migrate:latest  # pin to a digest in real deploys
+          imagePullPolicy: IfNotPresent
+          args: ["up"]
+          env:
+            - name: APP_ENV
+              value: production
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rally-postgres
+                  key: DATABASE_URL
+          resources:
+            requests: { cpu: "25m", memory: "32Mi" }
+            limits:   { cpu: "500m", memory: "128Mi" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }

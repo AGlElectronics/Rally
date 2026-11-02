@@ -1,0 +1,59 @@
+# Rally SPA Deployment. nginx-served static bundle that reverse-proxies
+# /api/* to the backend Service. Build the image with
+# `--build-arg NGINX_CONF=nginx.k8s.conf` so the upstream points at
+# rally-backend.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rally-frontend
+  namespace: rally
+  labels:
+    app.kubernetes.io/name: rally
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rally
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rally
+        app.kubernetes.io/component: frontend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: nginx
+          image: ghcr.io/aglelectronics/rally-frontend:latest  # pin to digest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+          livenessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 15
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 1
+            periodSeconds: 5
+          resources:
+            requests: { cpu: "25m", memory: "32Mi" }
+            limits:   { cpu: "200m", memory: "128Mi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rally-frontend
+  namespace: rally
+spec:
+  selector:
+    app.kubernetes.io/name: rally
+    app.kubernetes.io/component: frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

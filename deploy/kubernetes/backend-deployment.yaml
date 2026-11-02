@@ -1,0 +1,100 @@
+# Rally API Deployment. Ships 2 replicas by default; probes split
+# liveness (process alive) from readiness (DB reachable). The API does NOT
+# run migrations on start — see migrate-job.yaml.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rally-backend
+  namespace: rally
+  labels:
+    app.kubernetes.io/name: rally
+    app.kubernetes.io/component: backend
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rally
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rally
+        app.kubernetes.io/component: backend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 65532
+      containers:
+        - name: backend
+          image: ghcr.io/aglelectronics/rally-backend:latest  # pin to digest in real deploys
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8100
+          env:
+            - name: APP_ENV
+              value: production
+            - name: HTTP_ADDR
+              value: ":8100"
+            - name: AUTH_MODE
+              value: oidc
+            - name: BRAND_SOURCE
+              value: standalone
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: rally-postgres, key: DATABASE_URL } }
+            - name: S3_ENDPOINT
+              valueFrom: { secretKeyRef: { name: rally-s3,       key: S3_ENDPOINT } }
+            - name: S3_BUCKET
+              valueFrom: { secretKeyRef: { name: rally-s3,       key: S3_BUCKET } }
+            - name: S3_ACCESS_KEY_ID
+              valueFrom: { secretKeyRef: { name: rally-s3,       key: S3_ACCESS_KEY_ID } }
+            - name: S3_SECRET_ACCESS_KEY
+              valueFrom: { secretKeyRef: { name: rally-s3,       key: S3_SECRET_ACCESS_KEY } }
+            - name: S3_REGION
+              valueFrom: { secretKeyRef: { name: rally-s3,       key: S3_REGION } }
+            - name: S3_USE_PATH_STYLE
+              value: "false"
+            - name: OIDC_ISSUER_URL
+              valueFrom: { secretKeyRef: { name: rally-oidc,     key: OIDC_ISSUER_URL } }
+            - name: OIDC_CLIENT_ID
+              valueFrom: { secretKeyRef: { name: rally-oidc,     key: OIDC_CLIENT_ID } }
+            - name: OIDC_AUDIENCE
+              valueFrom: { secretKeyRef: { name: rally-oidc,     key: OIDC_AUDIENCE } }
+            - name: CORS_ALLOWED_ORIGINS
+              value: "https://events.example.com"  # replace per-deployment
+          livenessProbe:
+            httpGet: { path: /livez, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "1000m", memory: "512Mi" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rally-backend
+  namespace: rally
+spec:
+  selector:
+    app.kubernetes.io/name: rally
+    app.kubernetes.io/component: backend
+  ports:
+    - name: http
+      port: 8100
+      targetPort: http

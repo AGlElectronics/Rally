@@ -1,0 +1,136 @@
+openapi: 3.0.3
+info:
+  title: Rally API
+  version: 0.1.0
+  description: |
+    Rally (Events) scaffold API. Only the foundation endpoints are
+    documented today; call-for-proposals / review / schedule / publish
+    arrive with the first vertical slice (delivery-plan.md §5).
+servers:
+  - url: http://localhost:8100
+    description: Local Docker Compose stack
+paths:
+  /livez:
+    get:
+      summary: Process liveness probe
+      description: Returns 200 as long as the HTTP server is up. Never checks the DB.
+      responses:
+        "200":
+          description: Process is alive
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Status' }
+  /readyz:
+    get:
+      summary: Service readiness probe
+      description: Pings PostgreSQL. 503 while the DB is unreachable.
+      responses:
+        "200": { description: Ready, content: { application/json: { schema: { $ref: '#/components/schemas/Status' } } } }
+        "503": { description: Degraded, content: { application/json: { schema: { $ref: '#/components/schemas/Status' } } } }
+  /api/health:
+    get:
+      summary: Richer health JSON for humans
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+  /api/v1/brand:
+    get:
+      summary: Active brand package
+      description: Unauthenticated. Served by the configured brand provider (standalone or den).
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Brand' }
+  /api/v1/me:
+    get:
+      summary: Authenticated principal and permissions
+      security: [ { devHeader: [] }, { bearer: [] } ]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+components:
+  securitySchemes:
+    devHeader:
+      type: apiKey
+      in: header
+      name: X-Dev-User
+      description: AUTH_MODE=dev only. Provisions a user under the reserved "dev" issuer.
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: AUTH_MODE=oidc. Bearer ID token with aud=client_id.
+  schemas:
+    Status:
+      type: object
+      properties:
+        status: { type: string, example: ok }
+        database: { type: string, example: ok }
+    Health:
+      type: object
+      properties:
+        status: { type: string }
+        database: { type: string }
+        version: { type: string }
+        uptime_sec: { type: integer, format: int64 }
+    Brand:
+      type: object
+      required: [revision, source, productName]
+      properties:
+        revision: { type: integer }
+        source: { type: string, enum: [standalone, den] }
+        productName: { type: string }
+        organizationName: { type: string }
+        loginSubtitle: { type: string }
+        loginButtonLabel: { type: string }
+        logoUrl: { type: string }
+        themeColor: { type: string }
+        colors:
+          type: object
+          additionalProperties: { type: string }
+        cssVariables:
+          type: object
+          additionalProperties: { type: string }
+    Me:
+      type: object
+      required: [id, display_name, issuer, subject, memberships, permissions]
+      properties:
+        id: { type: string, format: uuid }
+        display_name: { type: string }
+        email: { type: string }
+        issuer: { type: string }
+        subject: { type: string }
+        memberships:
+          type: array
+          items:
+            type: object
+            properties:
+              organization_id: { type: string, format: uuid }
+              edition_id: { type: string, format: uuid, nullable: true }
+              role: { type: string }
+        permissions:
+          type: array
+          items: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: {}
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
