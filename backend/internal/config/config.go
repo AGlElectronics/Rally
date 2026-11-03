@@ -27,21 +27,6 @@ const (
 	AuthModeDev  AuthMode = "dev"
 )
 
-// BrandSource picks where the frontend brand package comes from.
-//
-//   - BrandSourceStandalone reads a local brand.json shipped with the
-//     frontend image. This is the default and keeps Rally runnable without
-//     the central portal (`Den`, provisional name).
-//   - BrandSourceDen fetches brand metadata from a paired Den instance; the
-//     Den pairing client is stubbed in internal/brand but wired through so
-//     this flag is already respected everywhere.
-type BrandSource string
-
-const (
-	BrandSourceStandalone BrandSource = "standalone"
-	BrandSourceDen        BrandSource = "den"
-)
-
 // Config is the validated process configuration. Fields are grouped by
 // concern so new flags can be added next to related ones.
 type Config struct {
@@ -71,10 +56,9 @@ type Config struct {
 	DevDefaultUser   string
 
 	// Brand provider
-	BrandSource    BrandSource
-	BrandLocalPath string // path to brand.json when BrandSource=standalone (optional)
-	DenBaseURL     string // paired Den portal base URL (reserved; stub for now)
-	DenPairingKey  string // service-to-service pairing secret (reserved)
+	BrandLocalPath string // optional brand.json; Den's brand overlays it once paired
+	// DenInternalURL replaces the host of pasted Den pairing URLs (Docker).
+	DenInternalURL string
 
 	// HTTP
 	CORSAllowedOrigins []string
@@ -113,10 +97,8 @@ func Load() (*Config, error) {
 		AccessConfigPath: getEnv("ACCESS_CONFIG_PATH", ""),
 		DevDefaultUser:   getEnv("DEV_DEFAULT_USER", "dev-admin"),
 
-		BrandSource:    BrandSource(getEnv("BRAND_SOURCE", string(BrandSourceStandalone))),
 		BrandLocalPath: getEnv("BRAND_LOCAL_PATH", ""),
-		DenBaseURL:     getEnv("DEN_BASE_URL", ""),
-		DenPairingKey:  getEnv("DEN_PAIRING_KEY", ""),
+		DenInternalURL: getEnv("DEN_INTERNAL_URL", ""),
 
 		CORSAllowedOrigins: splitCSV(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3002")),
 		ShutdownTimeout:    getEnvDuration("SHUTDOWN_TIMEOUT", 15*time.Second),
@@ -162,16 +144,6 @@ func (c *Config) validate() error {
 		// dev mode: no extra required fields; dev users auto-provision.
 	default:
 		errs = append(errs, fmt.Sprintf("AUTH_MODE must be 'oidc' or 'dev', got %q", c.AuthMode))
-	}
-
-	switch c.BrandSource {
-	case BrandSourceStandalone, BrandSourceDen:
-		// ok
-	default:
-		errs = append(errs, fmt.Sprintf("BRAND_SOURCE must be 'standalone' or 'den', got %q", c.BrandSource))
-	}
-	if c.BrandSource == BrandSourceDen && c.DenBaseURL == "" {
-		errs = append(errs, "DEN_BASE_URL is required when BRAND_SOURCE=den")
 	}
 
 	if len(errs) > 0 {

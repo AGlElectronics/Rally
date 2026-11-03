@@ -1,18 +1,12 @@
 // Package brand supplies the frontend brand package (product name, logo,
-// colors, login copy). The source is pluggable so Rally can run standalone
-// off a local file today and later pair with the central portal (`Den`,
-// provisional name) without changing feature code.
-//
-// Scope: this scaffold ships a working standalone provider and a Den stub
-// that satisfies the interface but returns a clear "not paired" error. The
-// real Den pairing client lands with the Den work and is intentionally not
-// built here.
+// colors, login copy). Standalone it comes from an optional local file;
+// once Rally is paired with Den (internal/denlink), the HTTP layer overlays
+// Den's organisation name, logo and theme on top.
 package brand
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -23,8 +17,7 @@ import (
 
 // Brand is the public JSON shape returned by GET /api/v1/brand and consumed
 // by the SPA on boot. Keep the fields small and additive — the frontend
-// tolerates missing optional fields but will not re-render on structural
-// changes mid-request.
+// tolerates missing optional fields.
 type Brand struct {
 	Revision         int               `json:"revision"`
 	Source           string            `json:"source"` // "standalone" | "den"
@@ -36,26 +29,19 @@ type Brand struct {
 	ThemeColor       string            `json:"themeColor,omitempty"`
 	Colors           map[string]string `json:"colors,omitempty"`
 	CSSVariables     map[string]string `json:"cssVariables,omitempty"`
+	// Theme is Den's theme JSON (hex colours) when paired.
+	Theme map[string]any `json:"theme,omitempty"`
 }
 
-// Provider loads the current brand package. Implementations MUST be safe
-// for concurrent reads and SHOULD cache aggressively — Get is called on
-// every SPA boot.
+// Provider loads the local brand package. Implementations MUST be safe for
+// concurrent reads and SHOULD cache — Get is called on every SPA boot.
 type Provider interface {
 	Get(ctx context.Context) (*Brand, error)
-	Source() config.BrandSource
 }
 
-// New returns the Provider implementation that matches cfg.BrandSource.
-// Validation of the source value happens in config.Load, so a non-nil cfg
-// always produces a non-nil provider.
+// New returns the standalone provider (local file or generic defaults).
 func New(cfg *config.Config) Provider {
-	switch cfg.BrandSource {
-	case config.BrandSourceDen:
-		return &denProvider{baseURL: cfg.DenBaseURL, key: cfg.DenPairingKey}
-	default:
-		return &standaloneProvider{path: cfg.BrandLocalPath}
-	}
+	return &standaloneProvider{path: cfg.BrandLocalPath}
 }
 
 // defaultBrand is returned when no local file is configured. It is
@@ -63,12 +49,10 @@ func New(cfg *config.Config) Provider {
 func defaultBrand() *Brand {
 	return &Brand{
 		Revision:         1,
-		Source:           string(config.BrandSourceStandalone),
+		Source:           "standalone",
 		ProductName:      "Rally",
-		OrganizationName: "",
 		LoginSubtitle:    "Events & convention management",
 		LoginButtonLabel: "Continue with your organisation login",
-		LogoURL:          "",
 		ThemeColor:       "#18181b",
 		Colors: map[string]string{
 			"primary": "#4f46e5",
@@ -78,10 +62,6 @@ func defaultBrand() *Brand {
 	}
 }
 
-// -----------------------------------------------------------------------------
-// Standalone provider — reads a local JSON file (or returns a default).
-// -----------------------------------------------------------------------------
-
 type standaloneProvider struct {
 	path string
 
@@ -90,12 +70,8 @@ type standaloneProvider struct {
 	loaded time.Time
 }
 
-func (p *standaloneProvider) Source() config.BrandSource { return config.BrandSourceStandalone }
-
 func (p *standaloneProvider) Get(_ context.Context) (*Brand, error) {
-	// Cheap in-process cache: the file is read at most every 30 seconds.
-	// For a scaffold this is fine; the full implementation can watch the
-	// file for changes if operators want hot reloads.
+	// The file is read at most every 30 seconds.
 	p.mu.RLock()
 	if p.cached != nil && time.Since(p.loaded) < 30*time.Second {
 		b := *p.cached
@@ -113,37 +89,13 @@ func (p *standaloneProvider) Get(_ context.Context) (*Brand, error) {
 		if err := json.Unmarshal(data, b); err != nil {
 			return nil, fmt.Errorf("parse brand file %q: %w", p.path, err)
 		}
-		b.Source = string(config.BrandSourceStandalone)
+		b.Source = "standalone"
 	}
 
 	p.mu.Lock()
 	p.cached = b
 	p.loaded = time.Now()
 	p.mu.Unlock()
-	return b, nil
-}
-
-// -----------------------------------------------------------------------------
-// Den pairing stub — placeholder for the future pairing client.
-// -----------------------------------------------------------------------------
-
-type denProvider struct {
-	baseURL string
-	key     string
-}
-
-func (p *denProvider) Source() config.BrandSource { return config.BrandSourceDen }
-
-// Get returns a clear "not yet implemented" error so operators who enable
-// BRAND_SOURCE=den before the pairing client lands see an explicit failure
-// rather than silent fallback. The baseURL/key are kept so the surface
-// is already shaped correctly for the real implementation.
-func (p *denProvider) Get(_ context.Context) (*Brand, error) {
-	if p.baseURL == "" {
-		return nil, errors.New("den brand provider: DEN_BASE_URL not configured")
-	}
-	// TODO(rally/den): swap for a real signed HTTP call to Den's brand
-	// endpoint. The pairing-key flow is intentionally left for the Den
-	// implementation task.
-	return nil, errors.New("den brand provider is not yet implemented in this scaffold")
+	cp := *b
+	return &cp, nil
 }

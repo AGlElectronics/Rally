@@ -24,9 +24,13 @@ function Wordmark() {
   const { brand } = useBrand();
   return (
     <div className="flex items-center gap-2.5">
-      <span className="rounded-pill bg-primary-soft p-1.5">
-        <CalendarRange className="w-5 h-5 text-primary" />
-      </span>
+      {brand.logoUrl ? (
+        <img src={brand.logoUrl} alt="" className="h-8 w-8 rounded-md object-contain" />
+      ) : (
+        <span className="rounded-pill bg-primary-soft p-1.5">
+          <CalendarRange className="w-5 h-5 text-primary" />
+        </span>
+      )}
       <span className="leading-none">
         <span className="block font-heading text-xl font-extrabold tracking-tight">
           {brand.productName}

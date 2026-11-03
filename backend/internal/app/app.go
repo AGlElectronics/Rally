@@ -22,6 +22,7 @@ import (
 
 	"github.com/AGlElectronics/rally/backend/internal/auth"
 	"github.com/AGlElectronics/rally/backend/internal/brand"
+	"github.com/AGlElectronics/rally/backend/internal/denlink"
 	"github.com/AGlElectronics/rally/backend/internal/config"
 	"github.com/AGlElectronics/rally/backend/internal/db"
 	"github.com/AGlElectronics/rally/backend/internal/files"
@@ -43,7 +44,6 @@ func Run(ctx context.Context, logger zerolog.Logger) error {
 		Str("env", cfg.AppEnv).
 		Str("addr", cfg.HTTPAddr).
 		Str("auth_mode", string(cfg.AuthMode)).
-		Str("brand_source", string(cfg.BrandSource)).
 		Str("version", Version).
 		Msg("starting rally backend")
 
@@ -102,7 +102,8 @@ func Run(ctx context.Context, logger zerolog.Logger) error {
 	}
 
 	brandProvider := brand.New(cfg)
-	logger.Info().Str("source", string(brandProvider.Source())).Msg("brand provider ready")
+	den := denlink.New(pool, denlink.Config{Slug: "events", Version: Version, InternalURL: cfg.DenInternalURL}, logger)
+	go den.Run(ctx)
 
 	router := httpx.NewRouter(httpx.Deps{
 		Config:       cfg,
@@ -110,6 +111,7 @@ func Run(ctx context.Context, logger zerolog.Logger) error {
 		Logger:       logger,
 		Files:        filesClient,
 		Brand:        brandProvider,
+		Den:          den,
 		OIDCVerifier: oidcVerifier,
 		Access:       access,
 	}, Version)

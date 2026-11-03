@@ -38,6 +38,7 @@ import (
 	"github.com/AGlElectronics/rally/backend/internal/auth"
 	"github.com/AGlElectronics/rally/backend/internal/brand"
 	"github.com/AGlElectronics/rally/backend/internal/config"
+	"github.com/AGlElectronics/rally/backend/internal/denlink"
 	"github.com/AGlElectronics/rally/backend/internal/events"
 	"github.com/AGlElectronics/rally/backend/internal/files"
 )
@@ -52,6 +53,8 @@ type Deps struct {
 	Brand        brand.Provider
 	OIDCVerifier *auth.OIDCVerifier
 	Access       *auth.AccessConfig
+	// Den is the pairing with Den; nil means a fresh standalone client.
+	Den *denlink.Client
 }
 
 // NewRouter builds the chi router with middleware, CORS, and routes.
@@ -89,7 +92,11 @@ func NewRouter(deps Deps, version string) http.Handler {
 	resolver := auth.NewResolver(deps.Pool, deps.Access)
 	authMW := auth.Middleware(deps.Config, resolver, deps.OIDCVerifier)
 
-	brandH := &brandHandler{provider: deps.Brand}
+	den := deps.Den
+	if den == nil {
+		den = denlink.New(deps.Pool, denlink.Config{Slug: "events", Version: version}, deps.Logger)
+	}
+	brandH := &brandHandler{provider: deps.Brand, den: den}
 	orgs := &organizationHandler{svc: events.NewOrganizationService(deps.Pool)}
 	editions := &editionHandler{svc: events.NewEditionService(deps.Pool)}
 	cfps := &cfpHandler{svc: events.NewCfPService(deps.Pool)}
@@ -108,10 +115,18 @@ func NewRouter(deps Deps, version string) http.Handler {
 			// Brand is public so the login screen can render before the
 			// user authenticates.
 			v1.Get("/brand", brandH.get)
+			v1.Get("/brand/logo", den.LogoHandler)
 
 			v1.Group(func(secure chi.Router) {
 				secure.Use(authMW)
 				secure.Get("/me", meHandler)
+				secure.Route("/den", func(dr chi.Router) {
+					dr.Use(requirePermission("org.manage"))
+					dr.Get("/", den.StatusHandler)
+					dr.Post("/pair", den.PairHandler)
+					dr.Post("/sync", den.SyncHandler)
+					dr.Delete("/pair", den.UnpairHandler)
+				})
 				secure.Get("/organizations", orgs.list)
 				secure.Get("/organizations/{id}", orgs.get)
 

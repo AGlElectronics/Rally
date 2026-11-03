@@ -33,12 +33,11 @@ func TestCfPSubmissionAcceptFlow(t *testing.T) {
 	t.Cleanup(pool.Close)
 
 	cfg := &config.Config{
-		AppEnv:         "development",
-		AppBaseURL:     "http://localhost:8100",
-		HTTPAddr:       ":0",
-		AuthMode:       config.AuthModeDev,
-		DevDefaultUser: "dev-admin",
-		BrandSource:    config.BrandSourceStandalone,
+		AppEnv:             "development",
+		AppBaseURL:         "http://localhost:8100",
+		HTTPAddr:           ":0",
+		AuthMode:           config.AuthModeDev,
+		DevDefaultUser:     "dev-admin",
 		CORSAllowedOrigins: []string{"*"},
 	}
 	access := auth.DefaultAccessConfig()

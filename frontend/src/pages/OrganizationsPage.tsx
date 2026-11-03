@@ -4,8 +4,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { PageContainer, PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState, ErrorRow, LoadingRow } from '@/components/ui/States';
 import { listOrganizations } from '@/api/organizations';
+import { DenConnection } from '@/components/DenConnection';
+import { PERMS, useMe } from '@/hooks/useMe';
 
 export function OrganizationsPage() {
+  const { can } = useMe();
   const orgsQ = useQuery({
     queryKey: ['organizations'],
     queryFn: ({ signal }) => listOrganizations(signal),
@@ -48,6 +51,12 @@ export function OrganizationsPage() {
           ))}
         </div>
       )}
+
+      {can(PERMS.orgManage) ? (
+        <div className="mt-8 max-w-2xl">
+          <DenConnection base="/api/v1/den" />
+        </div>
+      ) : null}
     </PageContainer>
   );
 }
