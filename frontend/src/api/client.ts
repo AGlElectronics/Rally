@@ -38,6 +38,13 @@ export function setAuthHeadersResolver(fn: () => Promise<AuthHeaders>) {
   authHeadersResolver = fn;
 }
 
+let unauthorizedHandler: (() => void) | null = null;
+
+/** Called when the API answers 401 (session gone); set by the OIDC session sync. */
+export function setUnauthorizedHandler(fn: () => void) {
+  unauthorizedHandler = fn;
+}
+
 type RequestOpts = {
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   body?: unknown;
@@ -73,6 +80,12 @@ export async function apiRequest<T>(path: string, opts: RequestOpts = {}): Promi
     headers,
     credentials: 'include',
   });
+
+  if (res.status === 401) {
+
+    unauthorizedHandler?.();
+
+  }
 
   if (res.status === 204) {
     return undefined as T;
