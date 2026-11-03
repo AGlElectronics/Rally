@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -27,6 +28,7 @@ import (
 type Resolver struct {
 	pool   *pgxpool.Pool
 	access *AccessConfig
+	orgIDs sync.Map // organization slug -> uuid.UUID
 }
 
 // NewResolver constructs a Resolver backed by the given pool and access
@@ -84,19 +86,15 @@ func (r *Resolver) LoadOrProvisionOIDCUser(ctx context.Context, claims *OIDCClai
 		return nil, fmt.Errorf("upsert oidc user: %w", err)
 	}
 
-	// Dev-suite convenience: IdP group `events-admin` grants organization_admin
-	// on the seeded demo org so local Keycloak users can exercise CfP without
-	// a separate admin UI. Production should use explicit role_assignments.
-	if containsGroup(claims.Groups, "events-admin") {
-		if err := r.ensureDemoOrgAdmin(ctx, userID); err != nil {
-			return nil, fmt.Errorf("ensure demo org admin: %w", err)
-		}
-	}
-
 	memberships, err := r.loadMemberships(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("load memberships: %w", err)
 	}
+	groupRoles, err := r.groupMemberships(ctx, claims.Groups)
+	if err != nil {
+		return nil, fmt.Errorf("resolve group bindings: %w", err)
+	}
+	memberships = append(memberships, groupRoles...)
 
 	email := ""
 	if emailPtr != nil {
@@ -286,32 +284,38 @@ func displayNameFromClaims(c *OIDCClaims) string {
 	return c.Subject
 }
 
-// demoOrgID matches the seed row in migrations/20260101000001_init.sql.
-var demoOrgID = uuid.MustParse("00000000-0000-0000-0000-000000000010")
-
-func containsGroup(groups []string, want string) bool {
-	for _, g := range groups {
-		if g == want {
-			return true
+// groupMemberships turns the token's IdP groups into organization-wide
+// memberships via the access config bindings. Nothing is persisted, so
+// removing someone from a group revokes the role on their next request.
+// Bindings naming an organization slug that does not exist grant nothing.
+func (r *Resolver) groupMemberships(ctx context.Context, groups []string) ([]Membership, error) {
+	var out []Membership
+	for _, b := range r.access.BindingsFor(groups) {
+		orgID, ok, err := r.orgIDBySlug(ctx, b.Organization)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			out = append(out, Membership{OrganizationID: orgID, Role: b.Role})
 		}
 	}
-	return false
+	return out, nil
 }
 
-func (r *Resolver) ensureDemoOrgAdmin(ctx context.Context, userID uuid.UUID) error {
-	if _, err := r.pool.Exec(ctx, `
-		INSERT INTO memberships (organization_id, user_id, status)
-		VALUES ($1, $2, 'active')
-		ON CONFLICT (organization_id, user_id) DO UPDATE SET status = 'active'
-	`, demoOrgID, userID); err != nil {
-		return err
+func (r *Resolver) orgIDBySlug(ctx context.Context, slug string) (uuid.UUID, bool, error) {
+	if id, ok := r.orgIDs.Load(slug); ok {
+		return id.(uuid.UUID), true, nil
 	}
-	_, err := r.pool.Exec(ctx, `
-		INSERT INTO role_assignments (organization_id, edition_id, user_id, role)
-		VALUES ($1, NULL, $2, 'organization_admin')
-		ON CONFLICT DO NOTHING
-	`, demoOrgID, userID)
-	return err
+	var id uuid.UUID
+	err := r.pool.QueryRow(ctx, `SELECT id FROM organizations WHERE slug = $1`, slug).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, false, nil
+	}
+	if err != nil {
+		return uuid.Nil, false, err
+	}
+	r.orgIDs.Store(slug, id)
+	return id, true, nil
 }
 
 // Ensure referenced symbol from domain is used elsewhere; this prevents

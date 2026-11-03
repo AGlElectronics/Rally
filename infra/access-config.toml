@@ -1,9 +1,8 @@
 # Rally access configuration.
 #
-# This TOML file is the SINGLE source of truth for the role → permission
-# catalog and the OIDC-group → role bindings. The access config loader in
-# internal/auth/accessconfig.go reads it once at startup; restart the
-# backend after editing. It is not read on every request.
+# This TOML file is the single source of truth for the role → permission
+# catalog and the OIDC-group → role bindings. It is read once at startup;
+# restart the backend after editing.
 #
 # Permission reference — add new names in internal/domain/domain.go,
 # otherwise the loader rejects them.
@@ -12,58 +11,70 @@
 #   Edition:      edition.view  edition.edit
 #   Members:      member.view  member.manage
 #   Audit:        audit.view
+#   CfP:          cfp.manage  submission.review
 #
-# NOTE: The parsing of this file is a stub in the current scaffold — see
-# accessconfig.go. The structure below is already in the final shape so
-# the TOML parser can be dropped in without a schema migration.
+# A role listed here replaces its built-in permission set entirely.
+
+# Organization (slug) that bindings grant roles in, unless a binding sets
+# its own `organization`.
+organization = "demo-org"
 
 # -------------------------------------------------------------------------
 # Roles
 # -------------------------------------------------------------------------
 
 [roles.organization_admin]
+description = "Full control of the organization: editions, CfPs, members."
 permissions = [
   "org.view", "org.manage",
   "edition.view", "edition.edit",
   "member.view", "member.manage",
   "audit.view",
+  "cfp.manage", "submission.review",
 ]
 
 [roles.edition_organizer]
+description = "Runs editions: CfPs, submission review, members."
 permissions = [
   "org.view",
   "edition.view", "edition.edit",
   "member.view", "audit.view",
+  "cfp.manage", "submission.review",
 ]
 
 [roles.programme_manager]
-permissions = ["org.view", "edition.view", "member.view"]
+description = "Reviews and curates submissions for the programme."
+permissions = ["org.view", "edition.view", "member.view", "submission.review"]
 
 [roles.reviewer]
-permissions = ["org.view", "edition.view"]
+description = "Reviews submissions."
+permissions = ["org.view", "edition.view", "submission.review"]
 
 [roles.submitter]
+description = "Submits talks to open calls for papers."
 permissions = ["org.view", "edition.view"]
 
 [roles.viewer]
+description = "Read-only access to the organization and editions."
 permissions = ["org.view", "edition.view"]
 
 # -------------------------------------------------------------------------
-# OIDC group → role bindings
+# OIDC group → role bindings (organization-wide, evaluated per request:
+# removing someone from the group revokes the role on their next request)
 # -------------------------------------------------------------------------
 
 [[bindings]]
-group = "rally-admins"
+group = "events-admin"
 role = "organization_admin"
 
 [[bindings]]
-group = "rally-organizers"
+group = "events-organizer"
 role = "edition_organizer"
 
 [[bindings]]
-group = "rally-programme"
+group = "events-programme"
 role = "programme_manager"
 
 [[bindings]]
-group = "rally-reviewers"
+group = "events-reviewer"
 role = "reviewer"

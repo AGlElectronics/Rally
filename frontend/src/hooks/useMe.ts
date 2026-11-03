@@ -30,7 +30,8 @@ export function useMe(): MeHook {
     queryKey: ['me'],
     queryFn: ({ signal }) => getMe(signal),
     retry: false,
-    staleTime: 60_000,
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
   });
   const perms = q.data?.permissions ?? [];
   const can = (perm: string) => perms.includes(perm);

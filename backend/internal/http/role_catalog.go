@@ -29,16 +29,13 @@ var rallyRoleDescriptions = map[string]string{
 	domain.RoleViewer:            "Read-only access to the organization and editions.",
 }
 
-// groupForRole lists roles that are granted from an IdP group. Others are
-// per-edition role assignments managed inside Events itself.
-var groupForRole = map[string]string{
-	domain.RoleOrganizationAdmin: "events-admin",
-}
-
-// roleCatalogHandler serves GET /api/role-catalog (public, read-only).
+// roleCatalogHandler serves GET /api/role-catalog (public, read-only). Roles
+// bound to an IdP group in the access config are assignable from HR; the
+// rest are per-edition assignments managed inside Events.
 func roleCatalogHandler(access *auth.AccessConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		roles := make([]roleCatalogEntry, 0)
+		bindings := access.Bindings()
 		for _, role := range access.Roles() {
 			set := access.PermissionsForRole(role)
 			perms := make([]string, 0, len(set))
@@ -46,21 +43,34 @@ func roleCatalogHandler(access *auth.AccessConfig) http.HandlerFunc {
 				perms = append(perms, p)
 			}
 			sort.Strings(perms)
-			entry := roleCatalogEntry{
+			desc := access.RoleDescription(role)
+			if desc == "" {
+				desc = rallyRoleDescriptions[role]
+			}
+			base := roleCatalogEntry{
 				Key:         role,
 				Label:       humanizeRole(role),
-				Description: rallyRoleDescriptions[role],
-				Scope:       "organization",
+				Description: desc,
 				Permissions: perms,
 			}
-			if g, ok := groupForRole[role]; ok {
-				entry.Group = g
+			bound := false
+			for _, b := range bindings {
+				if b.Role != role {
+					continue
+				}
+				bound = true
+				entry := base
+				entry.Group = b.Group
 				entry.Assignable = true
-			} else {
+				entry.Scope = "organization:" + b.Organization
+				roles = append(roles, entry)
+			}
+			if !bound {
+				entry := base
 				entry.Scope = "edition"
 				entry.Note = "Assigned per edition inside Events, not via an IdP group."
+				roles = append(roles, entry)
 			}
-			roles = append(roles, entry)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"module":       "events",
