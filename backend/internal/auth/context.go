@@ -46,6 +46,29 @@ type User struct {
 
 	// EditionPermissions holds the permissions scoped to a specific edition.
 	EditionPermissions map[uuid.UUID]map[string]struct{}
+
+	// OrgWidePermissions holds only the permissions granted by org-scoped
+	// role assignments (edition_id IS NULL). Unlike OrgPermissions it does
+	// not include edition-scoped grants, so it is safe to apply to any
+	// edition in that organization.
+	OrgWidePermissions map[uuid.UUID]map[string]struct{}
+}
+
+// HasForEdition returns true if the user holds `perm` for the given edition,
+// either through an org-wide grant on the owning organization or a grant
+// scoped to that exact edition. This is the check edition-owned resources
+// (CfPs, submissions, ...) should use; HasInOrg is too broad for them
+// because it also counts grants for other editions.
+func (u *User) HasForEdition(perm string, orgID, editionID uuid.UUID) bool {
+	if u == nil {
+		return false
+	}
+	if perms, ok := u.OrgWidePermissions[orgID]; ok {
+		if _, ok := perms[perm]; ok {
+			return true
+		}
+	}
+	return u.HasInEdition(perm, editionID)
 }
 
 // HasAny returns true if the user holds `perm` anywhere (any org, any

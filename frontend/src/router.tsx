@@ -7,10 +7,11 @@ import {
 } from '@tanstack/react-router';
 
 import { Layout } from '@/components/Layout';
-import { AuthCallbackPage } from '@/pages/AuthCallbackPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { LoginPage } from '@/pages/LoginPage';
+import { OidcCallbackPage } from '@/pages/OidcCallbackPage';
 import { OrganizationsPage } from '@/pages/OrganizationsPage';
+import { CfPPage } from '@/pages/CfPPage';
 import { getUserManager, isOidcAuthMode } from '@/auth/oidc';
 
 // In OIDC mode a route behind the Layout checks there is a cached user
@@ -46,7 +47,7 @@ const loginRoute = createRoute({
 const authCallbackRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/auth/callback',
-  component: AuthCallbackPage,
+  component: OidcCallbackPage,
 });
 
 const appLayoutRoute = createRoute({
@@ -78,10 +79,17 @@ const organizationsRoute = createRoute({
   component: OrganizationsPage,
 });
 
+const cfpRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/cfp',
+  beforeLoad: ({ location }) => requireAuth(location.pathname),
+  component: CfPPage,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   authCallbackRoute,
-  appLayoutRoute.addChildren([indexRoute, dashboardRoute, organizationsRoute]),
+  appLayoutRoute.addChildren([indexRoute, dashboardRoute, organizationsRoute, cfpRoute]),
 ]);
 
 export const router = createRouter({ routeTree });

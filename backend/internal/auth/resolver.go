@@ -84,8 +84,15 @@ func (r *Resolver) LoadOrProvisionOIDCUser(ctx context.Context, claims *OIDCClai
 		return nil, fmt.Errorf("upsert oidc user: %w", err)
 	}
 
-	// Groups → roles happens here in the full implementation; the scaffold
-	// uses stored memberships. See docs/adr/0001-initial-scaffold.md.
+	// Dev-suite convenience: IdP group `events-admin` grants organization_admin
+	// on the seeded demo org so local Keycloak users can exercise CfP without
+	// a separate admin UI. Production should use explicit role_assignments.
+	if containsGroup(claims.Groups, "events-admin") {
+		if err := r.ensureDemoOrgAdmin(ctx, userID); err != nil {
+			return nil, fmt.Errorf("ensure demo org admin: %w", err)
+		}
+	}
+
 	memberships, err := r.loadMemberships(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("load memberships: %w", err)
@@ -201,6 +208,7 @@ func (r *Resolver) buildUser(
 	global := map[string]struct{}{}
 	orgPerms := map[uuid.UUID]map[string]struct{}{}
 	editionPerms := map[uuid.UUID]map[string]struct{}{}
+	orgWide := map[uuid.UUID]map[string]struct{}{}
 
 	for _, m := range memberships {
 		set := r.access.PermissionsForRole(m.Role)
@@ -215,6 +223,14 @@ func (r *Resolver) buildUser(
 		for p := range set {
 			global[p] = struct{}{}
 			orgSet[p] = struct{}{}
+			if m.EditionID == nil {
+				wide, ok := orgWide[m.OrganizationID]
+				if !ok {
+					wide = map[string]struct{}{}
+					orgWide[m.OrganizationID] = wide
+				}
+				wide[p] = struct{}{}
+			}
 			if m.EditionID != nil {
 				edSet, ok := editionPerms[*m.EditionID]
 				if !ok {
@@ -236,6 +252,7 @@ func (r *Resolver) buildUser(
 		Permissions:        global,
 		OrgPermissions:     orgPerms,
 		EditionPermissions: editionPerms,
+		OrgWidePermissions: orgWide,
 	}
 }
 
@@ -267,6 +284,34 @@ func displayNameFromClaims(c *OIDCClaims) string {
 	}
 	// Fallback to the subject — never pretty, but always non-empty.
 	return c.Subject
+}
+
+// demoOrgID matches the seed row in migrations/20260101000001_init.sql.
+var demoOrgID = uuid.MustParse("00000000-0000-0000-0000-000000000010")
+
+func containsGroup(groups []string, want string) bool {
+	for _, g := range groups {
+		if g == want {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *Resolver) ensureDemoOrgAdmin(ctx context.Context, userID uuid.UUID) error {
+	if _, err := r.pool.Exec(ctx, `
+		INSERT INTO memberships (organization_id, user_id, status)
+		VALUES ($1, $2, 'active')
+		ON CONFLICT (organization_id, user_id) DO UPDATE SET status = 'active'
+	`, demoOrgID, userID); err != nil {
+		return err
+	}
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO role_assignments (organization_id, edition_id, user_id, role)
+		VALUES ($1, NULL, $2, 'organization_admin')
+		ON CONFLICT DO NOTHING
+	`, demoOrgID, userID)
+	return err
 }
 
 // Ensure referenced symbol from domain is used elsewhere; this prevents

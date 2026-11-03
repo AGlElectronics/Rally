@@ -1,44 +1,69 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { getUserManager } from '@/auth/oidc';
+import { LoadingRow } from '@/components/ui/States';
 import { oidcCallbackUrl } from '@/auth/captureCallbackUrl';
+import { getUserManager, isOidcAuthMode } from '@/auth/oidc';
 
 /**
  * Completes the OIDC Authorization Code flow. We capture the URL at module
  * evaluation time (captureCallbackUrl) because TanStack Router strips
  * unvalidated query params before this component mounts.
+ *
+ * In dev mode this page should never be reached; we send the user straight
+ * to the dashboard so the SPA doesn't dead-end if someone bookmarks
+ * /auth/callback after switching AUTH_MODE back to dev.
  */
 export function OidcCallbackPage() {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const mgr = getUserManager();
-    if (!mgr) {
-      setError('OIDC is not configured in this build.');
+    if (!isOidcAuthMode()) {
+      navigate({ to: '/dashboard' }).catch(() => undefined);
       return;
     }
+    const mgr = getUserManager();
+    if (!mgr) {
+      setError('OIDC is not configured (set VITE_OIDC_AUTHORITY and VITE_OIDC_CLIENT_ID).');
+      return;
+    }
+    let cancelled = false;
     mgr
       .signinRedirectCallback(oidcCallbackUrl())
       .then((user) => {
-        const dest = (user?.state as string | undefined) || '/dashboard';
-        navigate({ to: dest }).catch(() => navigate({ to: '/dashboard' }).catch(() => undefined));
+        if (cancelled) return;
+        const target =
+          typeof user?.state === 'string' && user.state.startsWith('/')
+            ? user.state
+            : '/dashboard';
+        navigate({ to: target, replace: true }).catch(() => undefined);
       })
-      .catch((e: unknown) => {
-        setError(e instanceof Error ? e.message : 'Sign-in failed');
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : 'Sign-in failed.');
       });
+    return () => {
+      cancelled = true;
+    };
   }, [navigate]);
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-center px-4 bg-background text-foreground">
+        <div className="max-w-md space-y-3">
+          <h1 className="font-heading text-2xl font-extrabold">Sign-in failed</h1>
+          <p className="text-sm text-destructive">{error}</p>
+          <p className="text-sm text-muted-foreground">
+            Return to <a className="underline" href="/login">the login page</a> and try again.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
-      {error ? (
-        <div className="max-w-sm text-center space-y-2">
-          <p className="font-semibold text-destructive">Sign-in failed</p>
-          <p className="text-sm text-muted-foreground">{error}</p>
-        </div>
-      ) : (
-        <p className="text-sm text-muted-foreground">Completing sign-in…</p>
-      )}
+      <LoadingRow message="Completing sign-in…" />
     </div>
   );
 }

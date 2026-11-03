@@ -52,6 +52,10 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/server /server
-EXPOSE 8100
+# Container listens on :8080 (HTTP_ADDR default in compose). The HOST-side
+# mapping is wired by Compose / K8s — host port 8100 is Rally's reserved
+# dev port, but containers all speak :8080 internally so service mesh /
+# sidecar config stays uniform across every module in the ecosystem.
+EXPOSE 8080
 USER nonroot:nonroot
 ENTRYPOINT ["/server"]

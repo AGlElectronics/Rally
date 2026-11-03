@@ -17,9 +17,7 @@ type NavItem = {
 const NAV: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, perms: [] },
   { to: '/organizations', label: 'Organizations', icon: Users2, perms: [PERMS.orgView] },
-  // Future vertical slice: editions, call for proposals, programme…
-  // Kept as a greyed-out placeholder here so the shape is visible.
-  { to: '/dashboard', label: 'Programme (soon)', icon: CalendarRange, perms: [] },
+  { to: '/cfp', label: 'Call for papers', icon: CalendarRange, perms: [] },
 ];
 
 function Wordmark() {

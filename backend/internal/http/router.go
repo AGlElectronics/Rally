@@ -12,6 +12,13 @@
 //	GET /api/v1/me         — authenticated principal + permissions
 //	GET /api/v1/organizations  — list visible organizations
 //	GET /api/v1/organizations/{id} — read a single organization
+//	GET /api/v1/editions — editions visible to the caller
+//	GET|POST /api/v1/editions/{edition}/cfps
+//	GET|PUT|DELETE /api/v1/cfps/{cfp}
+//	GET /api/v1/editions/{edition}/submissions
+//	POST /api/v1/cfps/{cfp}/submissions
+//	GET|PATCH /api/v1/submissions/{submission}
+//	POST /api/v1/submissions/{submission}/{submit|withdraw|accept|reject}
 //
 // Everything under /api/v1 (except /brand) requires authentication; the
 // auth middleware is applied inside a chi.Group so the shape is explicit.
@@ -84,6 +91,9 @@ func NewRouter(deps Deps, version string) http.Handler {
 
 	brandH := &brandHandler{provider: deps.Brand}
 	orgs := &organizationHandler{svc: events.NewOrganizationService(deps.Pool)}
+	editions := &editionHandler{svc: events.NewEditionService(deps.Pool)}
+	cfps := &cfpHandler{svc: events.NewCfPService(deps.Pool)}
+	subs := &submissionHandler{svc: events.NewSubmissionService(deps.Pool)}
 
 	// Orchestrator probes — unauthenticated, served from the root so they
 	// don't collide with any /api/* middleware.
@@ -92,6 +102,7 @@ func NewRouter(deps Deps, version string) http.Handler {
 
 	r.Route("/api", func(api chi.Router) {
 		api.Get("/health", health.get)
+		api.Get("/role-catalog", roleCatalogHandler(deps.Access))
 
 		api.Route("/v1", func(v1 chi.Router) {
 			// Brand is public so the login screen can render before the
@@ -103,6 +114,25 @@ func NewRouter(deps Deps, version string) http.Handler {
 				secure.Get("/me", meHandler)
 				secure.Get("/organizations", orgs.list)
 				secure.Get("/organizations/{id}", orgs.get)
+
+				secure.Get("/editions", editions.list)
+				secure.Route("/editions/{edition}", func(ed chi.Router) {
+					ed.Get("/cfps", cfps.list)
+					ed.Post("/cfps", cfps.create)
+					ed.Get("/submissions", subs.listForEdition)
+				})
+
+				secure.Get("/cfps/{cfp}", cfps.get)
+				secure.Put("/cfps/{cfp}", cfps.update)
+				secure.Delete("/cfps/{cfp}", cfps.delete)
+				secure.Post("/cfps/{cfp}/submissions", subs.create)
+
+				secure.Get("/submissions/{submission}", subs.get)
+				secure.Patch("/submissions/{submission}", subs.update)
+				secure.Post("/submissions/{submission}/submit", subs.submit)
+				secure.Post("/submissions/{submission}/withdraw", subs.withdraw)
+				secure.Post("/submissions/{submission}/accept", subs.accept)
+				secure.Post("/submissions/{submission}/reject", subs.reject)
 			})
 		})
 	})

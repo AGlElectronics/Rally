@@ -16,6 +16,8 @@ const (
 	ResourceUser         ResourceType = "user"
 	ResourceMembership   ResourceType = "membership"
 	ResourceRole         ResourceType = "role_assignment"
+	ResourceCallForPaper ResourceType = "call_for_papers"
+	ResourceSubmission   ResourceType = "submission"
 )
 
 // Role names recognized by default. The access config file (TOML) may add
@@ -30,7 +32,7 @@ const (
 )
 
 // Permission identifiers. The initial set is intentionally minimal — we add
-// more as the first vertical slice (CfP → review → schedule → publish) lands.
+// more as the vertical slices (CfP → review → schedule → publish) land.
 const (
 	PermOrgView      = "org.view"
 	PermOrgManage    = "org.manage"
@@ -39,6 +41,13 @@ const (
 	PermMemberView   = "member.view"
 	PermMemberManage = "member.manage"
 	PermAuditView    = "audit.view"
+
+	// CfP slice. cfp.manage creates/edits/deletes calls for papers;
+	// submission.review lists every submission of an edition and
+	// accepts/rejects them. Submitting a talk needs no permission beyond
+	// authentication (an open CfP is open to any signed-in user).
+	PermCfPManage        = "cfp.manage"
+	PermSubmissionReview = "submission.review"
 )
 
 // AllPermissions returns every permission the access-config validator will
@@ -50,6 +59,7 @@ func AllPermissions() []string {
 		PermEditionView, PermEditionEdit,
 		PermMemberView, PermMemberManage,
 		PermAuditView,
+		PermCfPManage, PermSubmissionReview,
 	}
 }
 
@@ -63,12 +73,15 @@ func DefaultRolePermissions() map[string][]string {
 			PermOrgView,
 			PermEditionView, PermEditionEdit,
 			PermMemberView, PermAuditView,
+			PermCfPManage, PermSubmissionReview,
 		},
 		RoleProgrammeManager: {
 			PermOrgView, PermEditionView, PermMemberView,
+			PermSubmissionReview,
 		},
 		RoleReviewer: {
 			PermOrgView, PermEditionView,
+			PermSubmissionReview,
 		},
 		RoleSubmitter: {
 			PermOrgView, PermEditionView,

@@ -35,6 +35,19 @@ func RequireInOrg(ctx context.Context, perm string, orgID uuid.UUID) error {
 	return httperror.New(httperror.CodeForbidden, "missing permission: "+perm)
 }
 
+// RequireForEdition enforces `perm` for an edition-owned resource: an
+// org-wide grant on orgID or a grant scoped to editionID satisfies it.
+func RequireForEdition(ctx context.Context, perm string, orgID, editionID uuid.UUID) error {
+	u, ok := FromContext(ctx)
+	if !ok {
+		return httperror.New(httperror.CodeUnauthorized, "not authenticated")
+	}
+	if u.HasForEdition(perm, orgID, editionID) {
+		return nil
+	}
+	return httperror.New(httperror.CodeForbidden, "missing permission: "+perm)
+}
+
 // RequireInEdition enforces `perm` within a specific edition scope.
 func RequireInEdition(ctx context.Context, perm string, editionID uuid.UUID) error {
 	u, ok := FromContext(ctx)
