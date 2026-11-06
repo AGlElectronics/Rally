@@ -55,10 +55,30 @@ type Config struct {
 	AccessConfigPath string
 	DevDefaultUser   string
 
+	// Attendee login for the public submission site: a separate realm from
+	// staff. Empty issuer in oidc mode = public sign-in is unavailable.
+	AttendeeOIDCIssuerURL string
+	AttendeeOIDCClientID  string
+
 	// Brand provider
 	BrandLocalPath string // optional brand.json; Den's brand overlays it once paired
 	// DenInternalURL replaces the host of pasted Den pairing URLs (Docker).
 	DenInternalURL string
+
+	// Public schedule API. Den's "events_public_schedule" setting wins when
+	// paired and set; this is the standalone default.
+	PublicScheduleEnabled bool
+	// PublicAPIBuiltinKey is the "programme-page" API key the submission
+	// site uses for the public schedule (set the same value as the
+	// frontend's VITE_PUBLIC_SCHEDULE_KEY). It ships to every browser, so
+	// it buys rotation and per-client tracking, not secrecy. Changing it
+	// rotates the key; empty removes it.
+	PublicAPIBuiltinKey string
+
+	// Telegram bot for live-day announcements. Empty token = dry run: sends
+	// are recorded but nothing leaves the server.
+	TelegramBotToken string
+	TelegramAPIURL   string
 
 	// HTTP
 	CORSAllowedOrigins []string
@@ -97,8 +117,16 @@ func Load() (*Config, error) {
 		AccessConfigPath: getEnv("ACCESS_CONFIG_PATH", ""),
 		DevDefaultUser:   getEnv("DEV_DEFAULT_USER", "dev-admin"),
 
+		AttendeeOIDCIssuerURL: getEnv("ATTENDEE_OIDC_ISSUER_URL", ""),
+		AttendeeOIDCClientID:  getEnv("ATTENDEE_OIDC_CLIENT_ID", ""),
+
 		BrandLocalPath: getEnv("BRAND_LOCAL_PATH", ""),
 		DenInternalURL: getEnv("DEN_INTERNAL_URL", ""),
+
+		PublicScheduleEnabled: getEnvBool("PUBLIC_SCHEDULE_ENABLED", false),
+		PublicAPIBuiltinKey:   getEnv("PUBLIC_API_BUILTIN_KEY", ""),
+		TelegramBotToken:      getEnv("TELEGRAM_BOT_TOKEN", ""),
+		TelegramAPIURL:        getEnv("TELEGRAM_API_URL", "https://api.telegram.org"),
 
 		CORSAllowedOrigins: splitCSV(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3002")),
 		ShutdownTimeout:    getEnvDuration("SHUTDOWN_TIMEOUT", 15*time.Second),
@@ -139,6 +167,12 @@ func (c *Config) validate() error {
 		}
 		if c.OIDCClientID == "" {
 			errs = append(errs, "OIDC_CLIENT_ID is required when AUTH_MODE=oidc")
+		}
+		if c.AttendeeOIDCIssuerURL != "" && c.AttendeeOIDCClientID == "" {
+			errs = append(errs, "ATTENDEE_OIDC_CLIENT_ID is required when ATTENDEE_OIDC_ISSUER_URL is set")
+		}
+		if c.AttendeeOIDCIssuerURL != "" && c.AttendeeOIDCIssuerURL == c.OIDCIssuerURL {
+			errs = append(errs, "ATTENDEE_OIDC_ISSUER_URL must be a different realm than OIDC_ISSUER_URL (staff)")
 		}
 	case AuthModeDev:
 		// dev mode: no extra required fields; dev users auto-provision.

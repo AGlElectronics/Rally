@@ -10,6 +10,11 @@ export const PERMS = {
   memberView: 'member.view',
   memberManage: 'member.manage',
   auditView: 'audit.view',
+  cfpManage: 'cfp.manage',
+  submissionReview: 'submission.review',
+  submissionDecide: 'submission.decide',
+  scheduleEdit: 'schedule.edit',
+  schedulePublish: 'schedule.publish',
 } as const;
 
 export type MeHook = {

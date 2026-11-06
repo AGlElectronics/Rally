@@ -18,6 +18,12 @@ const (
 	ResourceRole         ResourceType = "role_assignment"
 	ResourceCallForPaper ResourceType = "call_for_papers"
 	ResourceSubmission   ResourceType = "submission"
+	ResourceEventType    ResourceType = "event_type"
+	ResourceRoom         ResourceType = "room"
+	ResourceSchedule     ResourceType = "schedule"
+	ResourceScheduleItem ResourceType = "schedule_item"
+	ResourceAnnouncement ResourceType = "announcement"
+	ResourceChat         ResourceType = "telegram_chat"
 )
 
 // Role names recognized by default. The access config file (TOML) may add
@@ -48,6 +54,15 @@ const (
 	// authentication (an open CfP is open to any signed-in user).
 	PermCfPManage        = "cfp.manage"
 	PermSubmissionReview = "submission.review"
+	// submission.decide accepts/rejects. Reviewers without it read, comment
+	// and score; the lead decides.
+	PermSubmissionDecide = "submission.decide"
+
+	// Schedule slice. schedule.edit sets up rooms and builds the draft;
+	// schedule.publish publishes, rolls back, makes live-day changes and
+	// sends announcements.
+	PermScheduleEdit    = "schedule.edit"
+	PermSchedulePublish = "schedule.publish"
 )
 
 // AllPermissions returns every permission the access-config validator will
@@ -59,7 +74,8 @@ func AllPermissions() []string {
 		PermEditionView, PermEditionEdit,
 		PermMemberView, PermMemberManage,
 		PermAuditView,
-		PermCfPManage, PermSubmissionReview,
+		PermCfPManage, PermSubmissionReview, PermSubmissionDecide,
+		PermScheduleEdit, PermSchedulePublish,
 	}
 }
 
@@ -73,11 +89,13 @@ func DefaultRolePermissions() map[string][]string {
 			PermOrgView,
 			PermEditionView, PermEditionEdit,
 			PermMemberView, PermAuditView,
-			PermCfPManage, PermSubmissionReview,
+			PermCfPManage, PermSubmissionReview, PermSubmissionDecide,
+			PermScheduleEdit, PermSchedulePublish,
 		},
 		RoleProgrammeManager: {
 			PermOrgView, PermEditionView, PermMemberView,
-			PermSubmissionReview,
+			PermSubmissionReview, PermSubmissionDecide,
+			PermScheduleEdit, PermSchedulePublish,
 		},
 		RoleReviewer: {
 			PermOrgView, PermEditionView,

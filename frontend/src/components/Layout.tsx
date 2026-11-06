@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
-import { CalendarRange, LayoutDashboard, LogOut, Menu, X, Users2 } from 'lucide-react';
+import { CalendarClock, CalendarRange, Inbox, LayoutDashboard, LogOut, Menu, Shapes, X, Users2 } from 'lucide-react';
 import { isOidcAuthMode, signOutOidc } from '@/auth/oidc';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useBrand } from '@/brand/BrandProvider';
 import { useMe, PERMS } from '@/hooks/useMe';
+import { useThemeSync } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 
 type NavItem = {
@@ -17,7 +18,9 @@ type NavItem = {
 const NAV: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, perms: [] },
   { to: '/organizations', label: 'Organizations', icon: Users2, perms: [PERMS.orgView] },
-  { to: '/cfp', label: 'Call for papers', icon: CalendarRange, perms: [] },
+  { to: '/cfp', label: 'Calls for papers', icon: Inbox, perms: [PERMS.submissionReview, PERMS.cfpManage] },
+  { to: '/event-types', label: 'Event types', icon: Shapes, perms: [PERMS.cfpManage] },
+  { to: '/schedule', label: 'Schedule', icon: CalendarClock, perms: [PERMS.scheduleEdit, PERMS.schedulePublish] },
 ];
 
 function Wordmark() {
@@ -79,6 +82,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 export function Layout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [drawerOpen, setDrawerOpen] = useState(false);
+  useThemeSync('/api/v1/me/preferences');
 
   // Collapse the mobile drawer whenever the route changes.
   useEffect(() => {

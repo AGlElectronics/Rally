@@ -32,7 +32,7 @@ const BrandCtx = createContext<Ctx>({ brand: fallback, loading: true });
  * Loads the brand and refetches it every minute and on tab focus, so a change
  * in Den (when paired) shows up without a rebuild or reload.
  */
-export function BrandProvider({ children }: { children: ReactNode }) {
+export function BrandProvider({ children, productName }: { children: ReactNode; productName?: string }) {
   const q = useQuery({
     queryKey: ['module-brand', '/api/v1/brand'],
     queryFn: ({ signal }) => getBrand(signal),
@@ -42,10 +42,10 @@ export function BrandProvider({ children }: { children: ReactNode }) {
     retry: 1,
   });
 
-  const brand = useMemo<Brand>(
-    () => (q.data ? { ...fallback, ...q.data, productName: q.data.productName || fallback.productName } : fallback),
-    [q.data],
-  );
+  const brand = useMemo<Brand>(() => {
+    const b = q.data ? { ...fallback, ...q.data, productName: q.data.productName || fallback.productName } : fallback;
+    return productName ? { ...b, productName } : b;
+  }, [q.data, productName]);
 
   useEffect(() => {
     let el = document.getElementById('brand') as HTMLStyleElement | null;

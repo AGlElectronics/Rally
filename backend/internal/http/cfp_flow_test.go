@@ -90,6 +90,7 @@ func TestCfPSubmissionAcceptFlow(t *testing.T) {
 		"title":    "Why conventions need inventory",
 		"abstract": "A practical talk about warehouse ops at events.",
 		"speakers": []map[string]string{{"name": "Alice", "email": "alice@example.test"}},
+		"answers":  map[string]any{"description": "A practical talk about warehouse ops at events."},
 	})
 	if subRec.Code != http.StatusCreated {
 		t.Fatalf("create submission %d %s", subRec.Code, subRec.Body.String())

@@ -4,6 +4,7 @@ import { CalendarRange, LogIn } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Input, Label } from '@/components/ui/Input';
+import { LoginBackdrop, loginLook } from '@/components/LoginBackdrop';
 import { useBrand } from '@/brand/BrandProvider';
 import { getDevUser, setDevUser } from '@/auth/dev';
 import { isOidcAuthMode, signInWithOidc } from '@/auth/oidc';
@@ -51,9 +52,11 @@ export function LoginPage() {
     }
   };
 
+  const look = loginLook(brand.loginBackgroundUrl, brand.loginLayout, brand.loginCaption);
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background text-foreground px-4 py-10">
-      <Card className="w-full max-w-md">
+    <LoginBackdrop look={look} plain="min-h-screen flex items-center justify-center bg-background text-foreground px-4 py-10">
+      <Card className="login-card w-full max-w-md">
         <CardHeader>
           <div className="flex items-center gap-2.5">
             <span className="rounded-pill bg-primary-soft p-1.5">
@@ -103,6 +106,6 @@ export function LoginPage() {
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
         </CardContent>
       </Card>
-    </div>
+    </LoginBackdrop>
   );
 }

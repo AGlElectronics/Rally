@@ -67,11 +67,7 @@ func (h *submissionHandler) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s, err := h.svc.Get(r.Context(), id)
-	if err != nil {
-		httperror.Render(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, s)
+	writeSubmission(w, r, http.StatusOK, s, err)
 }
 
 func (h *submissionHandler) update(w http.ResponseWriter, r *http.Request) {
@@ -134,6 +130,74 @@ func (h *submissionHandler) accept(w http.ResponseWriter, r *http.Request) {
 	var in decisionInput
 	_ = decodeJSON(r, &in)
 	s, err := h.svc.Accept(r.Context(), id, in.Note)
+	if err != nil {
+		httperror.Render(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s)
+}
+
+func (h *submissionHandler) notes(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUIDParam(r, "submission")
+	if err != nil {
+		httperror.Render(w, r, err)
+		return
+	}
+	items, err := h.svc.Notes(r.Context(), id)
+	if err != nil {
+		httperror.Render(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *submissionHandler) addNote(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUIDParam(r, "submission")
+	if err != nil {
+		httperror.Render(w, r, err)
+		return
+	}
+	var in struct {
+		Body string `json:"body"`
+	}
+	if err := decodeJSON(r, &in); err != nil {
+		httperror.Render(w, r, err)
+		return
+	}
+	n, err := h.svc.AddNote(r.Context(), id, in.Body)
+	if err != nil {
+		httperror.Render(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, n)
+}
+
+func (h *submissionHandler) scores(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUIDParam(r, "submission")
+	if err != nil {
+		httperror.Render(w, r, err)
+		return
+	}
+	s, err := h.svc.Scores(r.Context(), id)
+	if err != nil {
+		httperror.Render(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s)
+}
+
+func (h *submissionHandler) setScore(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUIDParam(r, "submission")
+	if err != nil {
+		httperror.Render(w, r, err)
+		return
+	}
+	var in events.ScoreInput
+	if err := decodeJSON(r, &in); err != nil {
+		httperror.Render(w, r, err)
+		return
+	}
+	s, err := h.svc.SetScore(r.Context(), id, in)
 	if err != nil {
 		httperror.Render(w, r, err)
 		return

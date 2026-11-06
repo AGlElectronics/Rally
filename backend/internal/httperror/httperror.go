@@ -26,6 +26,8 @@ const (
 	CodeNotFound     Code = "not_found"
 	CodeConflict     Code = "conflict"
 	CodeInternal     Code = "internal"
+	// CodeServiceUnavailable: a feature isn't configured on this deployment.
+	CodeServiceUnavailable Code = "service_unavailable"
 )
 
 // Error is the canonical service error. Services return *Error or wrap one
@@ -141,6 +143,8 @@ func statusFor(code Code) int {
 		return http.StatusNotFound
 	case CodeConflict:
 		return http.StatusConflict
+	case CodeServiceUnavailable:
+		return http.StatusServiceUnavailable
 	default:
 		return http.StatusInternalServerError
 	}

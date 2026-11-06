@@ -13,10 +13,14 @@ const viteEnv = {
   VITE_PRODUCT_NAME: process.env.VITE_PRODUCT_NAME ?? 'Rally',
 } as const;
 
+// One codebase, two apps: the staff app (default) and the public submission
+// site (RALLY_APP=submit), which is built and hosted separately.
+const submitApp = process.env.RALLY_APP === 'submit';
+
 export default defineConfig({
   plugins: [pluginReact()],
   source: {
-    entry: { index: './src/main.tsx' },
+    entry: { index: submitApp ? './src/submit/main.tsx' : './src/main.tsx' },
     define: {
       'process.env.RALLY_VERSION': JSON.stringify(process.env.RALLY_VERSION ?? 'dev'),
       'import.meta.env.VITE_AUTH_MODE': JSON.stringify(viteEnv.VITE_AUTH_MODE),
@@ -34,16 +38,16 @@ export default defineConfig({
   },
   html: {
     template: './public/index.html',
-    title: 'Rally — Events',
+    title: submitApp ? viteEnv.VITE_PRODUCT_NAME : 'Rally — Events',
     meta: {
-      description: 'Rally events & convention management',
+      description: submitApp ? 'Submit your event idea' : 'Rally events & convention management',
       'theme-color': '#18181b',
     },
   },
   server: {
     // Rally frontend runs on 3002 to avoid colliding with Stash (3000)
     // and the central-manager scaffold's reserved 3001.
-    port: 3002,
+    port: submitApp ? 3004 : 3002,
     proxy: {
       '/api': {
         target: process.env.API_PROXY_TARGET ?? 'http://localhost:8100',

@@ -8,7 +8,7 @@
     "build": "rsbuild build",
     "preview": "rsbuild preview",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.submit.json",
     "test": "vitest run"
   },
   "dependencies": {

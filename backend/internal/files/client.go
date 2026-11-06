@@ -112,6 +112,60 @@ func (c *Client) PresignedGet(ctx context.Context, key string, expiry time.Durat
 	return c.rewriteURL(u).String(), nil
 }
 
+// PresignedDownload is PresignedGet with a download filename.
+func (c *Client) PresignedDownload(ctx context.Context, key, filename string, expiry time.Duration) (string, error) {
+	params := url.Values{}
+	params.Set("response-content-disposition", `attachment; filename="`+strings.ReplaceAll(filename, `"`, "")+`"`)
+	u, err := c.mc.PresignedGetObject(ctx, c.bucket, key, expiry, params)
+	if err != nil {
+		return "", fmt.Errorf("presign get: %w", err)
+	}
+	return c.rewriteURL(u).String(), nil
+}
+
+// PresignedPost returns a URL and form fields for a browser multipart POST
+// straight to the bucket. Object storage itself rejects a different key,
+// content type or a body larger than maxBytes, so the bytes never pass
+// through (or get buffered by) the backend.
+func (c *Client) PresignedPost(ctx context.Context, key, contentType string, maxBytes int64, expiry time.Duration) (string, map[string]string, error) {
+	p := minio.NewPostPolicy()
+	if err := p.SetBucket(c.bucket); err != nil {
+		return "", nil, err
+	}
+	if err := p.SetKey(key); err != nil {
+		return "", nil, err
+	}
+	if err := p.SetExpires(time.Now().UTC().Add(expiry)); err != nil {
+		return "", nil, err
+	}
+	if err := p.SetContentType(contentType); err != nil {
+		return "", nil, err
+	}
+	if err := p.SetContentLengthRange(1, maxBytes); err != nil {
+		return "", nil, err
+	}
+	u, fields, err := c.mc.PresignedPostPolicy(ctx, p)
+	if err != nil {
+		return "", nil, fmt.Errorf("presign post: %w", err)
+	}
+	return c.rewriteURL(u).String(), fields, nil
+}
+
+// ObjectInfo is the subset of object metadata Rally checks after an upload.
+type ObjectInfo struct {
+	Size        int64
+	ContentType string
+}
+
+// Stat returns size and content type of an object.
+func (c *Client) Stat(ctx context.Context, key string) (ObjectInfo, error) {
+	info, err := c.mc.StatObject(ctx, c.bucket, key, minio.StatObjectOptions{})
+	if err != nil {
+		return ObjectInfo{}, fmt.Errorf("stat object: %w", err)
+	}
+	return ObjectInfo{Size: info.Size, ContentType: info.ContentType}, nil
+}
+
 // PutObject streams bytes into the bucket. Pass -1 as size if unknown; the
 // SDK buffers in memory up to its default part size.
 func (c *Client) PutObject(ctx context.Context, key string, r io.Reader, size int64, contentType string) error {

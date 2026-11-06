@@ -31,6 +31,10 @@ type Brand struct {
 	CSSVariables     map[string]string `json:"cssVariables,omitempty"`
 	// Theme is Den's theme JSON (hex colours) when paired.
 	Theme map[string]any `json:"theme,omitempty"`
+	// Login screen background from Den: picture, "panel" | "centered", caption.
+	LoginBackgroundURL string `json:"loginBackgroundUrl,omitempty"`
+	LoginLayout        string `json:"loginLayout,omitempty"`
+	LoginCaption       string `json:"loginCaption,omitempty"`
 }
 
 // Provider loads the local brand package. Implementations MUST be safe for

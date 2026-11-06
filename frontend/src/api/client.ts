@@ -30,6 +30,26 @@ export class ApiError extends Error {
   }
 }
 
+/** Field-level issues of a validation error ({"title": "is required", …}). */
+export function issuesOf(err: unknown): Record<string, string> {
+  if (err instanceof ApiError && err.details && typeof err.details === 'object') {
+    return Object.fromEntries(
+      Object.entries(err.details as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === 'string'),
+    );
+  }
+  return {};
+}
+
+/** A readable one-liner for any error, including validation issues. */
+export function errorText(err: unknown): string {
+  if (!err) return '';
+  const issues = Object.entries(issuesOf(err));
+  if (issues.length > 0) {
+    return issues.map(([k, v]) => `${k.replace(/^answers\./, '')}: ${v}`).join(' · ');
+  }
+  return err instanceof Error ? err.message : String(err);
+}
+
 type AuthHeaders = Record<string, string>;
 let authHeadersResolver: () => Promise<AuthHeaders> = async () => ({});
 

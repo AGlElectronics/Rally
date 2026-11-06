@@ -1,4 +1,6 @@
 import { apiRequest } from '@/api/client';
+import type { Answers, Form, SubmissionState } from '@/lib/forms';
+import type { UploadedFile } from '@/lib/upload';
 
 export type Edition = {
   id: string;
@@ -12,65 +14,128 @@ export type Edition = {
   end_at?: string | null;
 };
 
+export type ReviewMode = 'lead' | 'scored';
+export type CfPStatus = 'draft' | 'open' | 'closed';
+
 export type CallForPapers = {
   id: string;
   organization_id: string;
   edition_id: string;
   title: string;
   description: string;
-  status: 'draft' | 'open' | 'closed';
+  status: CfPStatus;
   opens_at?: string | null;
   closes_at?: string | null;
+  form: Form;
+  review_mode: ReviewMode;
+  event_type_ids: string[];
+  status_labels: Record<string, string>;
+  created_at: string;
+  updated_at: string;
 };
 
-export type Speaker = { name: string; email?: string; bio?: string };
+export type CfPInput = {
+  title: string;
+  description: string;
+  status: CfPStatus;
+  opens_at?: string | null;
+  closes_at?: string | null;
+  form?: Form;
+  review_mode?: ReviewMode;
+  event_type_ids?: string[];
+  status_labels?: Record<string, string>;
+};
+
+export type EventType = {
+  id: string;
+  edition_id: string;
+  name: string;
+  color: string;
+  default_minutes: number;
+  gap_after_minutes: number;
+  sort_order: number;
+  /** Rooms this type may use; empty = any room. */
+  room_ids: string[];
+};
+
+export type EventTypeInput = Pick<EventType, 'name' | 'color' | 'default_minutes' | 'gap_after_minutes' | 'sort_order'> & {
+  room_ids?: string[];
+};
+
+export type Person = {
+  id: string;
+  user_id?: string | null;
+  display_name: string;
+  role: 'owner' | 'presenter';
+  status: 'invited' | 'accepted';
+  invite_email?: string;
+  invite_code?: string;
+  created_at: string;
+};
 
 export type Submission = {
   id: string;
-  cfp_id: string;
   edition_id: string;
+  cfp_id: string;
+  cfp_title: string;
+  edition_title: string;
+  submitter_user_id: string;
+  submitter_name: string;
   title: string;
-  abstract: string;
-  speakers: Speaker[];
-  state: 'draft' | 'submitted' | 'accepted' | 'rejected' | 'withdrawn';
-  decision_note?: string;
+  answers: Answers;
+  event_type_id?: string | null;
+  event_type_name: string;
+  duration_minutes?: number | null;
+  state: SubmissionState;
+  submitted_at?: string | null;
+  decided_at?: string | null;
+  decision_note: string;
+  people: Person[];
+  files: UploadedFile[];
+  status_labels: Record<string, string>;
+  cfp_accepting: boolean;
+  score_avg?: number;
+  score_count?: number;
+  created_at: string;
+  updated_at: string;
 };
 
-export const listEditions = () =>
-  apiRequest<{ items: Edition[]; total: number }>('/api/v1/editions');
+export type Note = { id: string; author_id?: string | null; author_name: string; body: string; created_at: string };
+export type Score = { reviewer_id: string; reviewer_name: string; score: number; note: string; updated_at: string };
+export type ScoreSummary = { review_mode: ReviewMode; average?: number | null; scores: Score[]; mine?: Score | null };
 
-export const listCfPs = (editionId: string) =>
-  apiRequest<{ items: CallForPapers[]; total: number }>(`/api/v1/editions/${editionId}/cfps`);
+type List<T> = { items: T[]; total?: number };
 
-export const createCfP = (
-  editionId: string,
-  body: { title: string; description?: string; status: string },
-) => apiRequest<CallForPapers>(`/api/v1/editions/${editionId}/cfps`, { method: 'POST', body });
+export const API = '/api/v1';
 
-export const listSubmissions = (editionId: string, query?: { cfp_id?: string; mine?: boolean }) =>
-  apiRequest<{ items: Submission[]; total: number }>(`/api/v1/editions/${editionId}/submissions`, {
-    query: {
-      cfp_id: query?.cfp_id,
-      mine: query?.mine ? '1' : undefined,
-    },
-  });
+export const listEditions = () => apiRequest<List<Edition>>(`${API}/editions`);
 
-export const createSubmission = (
-  cfpId: string,
-  body: { title: string; abstract: string; speakers: Speaker[] },
-) => apiRequest<Submission>(`/api/v1/cfps/${cfpId}/submissions`, { method: 'POST', body });
+export const listCfPs = (editionId: string) => apiRequest<List<CallForPapers>>(`${API}/editions/${editionId}/cfps`);
+export const getCfP = (id: string) => apiRequest<CallForPapers>(`${API}/cfps/${id}`);
+export const createCfP = (editionId: string, body: CfPInput) =>
+  apiRequest<CallForPapers>(`${API}/editions/${editionId}/cfps`, { method: 'POST', body });
+export const updateCfP = (id: string, body: CfPInput) =>
+  apiRequest<CallForPapers>(`${API}/cfps/${id}`, { method: 'PUT', body });
 
-export const submitSubmission = (id: string) =>
-  apiRequest<Submission>(`/api/v1/submissions/${id}/submit`, { method: 'POST' });
+export const listEventTypes = (editionId: string) =>
+  apiRequest<List<EventType>>(`${API}/editions/${editionId}/event-types`);
+export const createEventType = (editionId: string, body: EventTypeInput) =>
+  apiRequest<EventType>(`${API}/editions/${editionId}/event-types`, { method: 'POST', body });
+export const updateEventType = (id: string, body: EventTypeInput) =>
+  apiRequest<EventType>(`${API}/event-types/${id}`, { method: 'PUT', body });
+export const deleteEventType = (id: string) => apiRequest<void>(`${API}/event-types/${id}`, { method: 'DELETE' });
 
-export const acceptSubmission = (id: string, note?: string) =>
-  apiRequest<Submission>(`/api/v1/submissions/${id}/accept`, {
-    method: 'POST',
-    body: { note: note ?? '' },
-  });
+export const listSubmissions = (editionId: string, query?: { cfp_id?: string; state?: string }) =>
+  apiRequest<List<Submission>>(`${API}/editions/${editionId}/submissions`, { query });
+export const getSubmission = (id: string) => apiRequest<Submission>(`${API}/submissions/${id}`);
+export const acceptSubmission = (id: string, note: string) =>
+  apiRequest<Submission>(`${API}/submissions/${id}/accept`, { method: 'POST', body: { note } });
+export const rejectSubmission = (id: string, note: string) =>
+  apiRequest<Submission>(`${API}/submissions/${id}/reject`, { method: 'POST', body: { note } });
 
-export const rejectSubmission = (id: string, note?: string) =>
-  apiRequest<Submission>(`/api/v1/submissions/${id}/reject`, {
-    method: 'POST',
-    body: { note: note ?? '' },
-  });
+export const listNotes = (id: string) => apiRequest<List<Note>>(`${API}/submissions/${id}/notes`);
+export const addNote = (id: string, body: string) =>
+  apiRequest<Note>(`${API}/submissions/${id}/notes`, { method: 'POST', body: { body } });
+export const getScores = (id: string) => apiRequest<ScoreSummary>(`${API}/submissions/${id}/scores`);
+export const setScore = (id: string, score: number, note: string) =>
+  apiRequest<ScoreSummary>(`${API}/submissions/${id}/scores`, { method: 'PUT', body: { score, note } });

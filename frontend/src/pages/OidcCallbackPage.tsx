@@ -13,13 +13,13 @@ import { getUserManager, isOidcAuthMode } from '@/auth/oidc';
  * to the dashboard so the SPA doesn't dead-end if someone bookmarks
  * /auth/callback after switching AUTH_MODE back to dev.
  */
-export function OidcCallbackPage() {
+export function OidcCallbackPage({ home = '/dashboard' }: { home?: string }) {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOidcAuthMode()) {
-      navigate({ to: '/dashboard' }).catch(() => undefined);
+      navigate({ to: home }).catch(() => undefined);
       return;
     }
     const mgr = getUserManager();
@@ -35,7 +35,7 @@ export function OidcCallbackPage() {
         const target =
           typeof user?.state === 'string' && user.state.startsWith('/')
             ? user.state
-            : '/dashboard';
+            : home;
         navigate({ to: target, replace: true }).catch(() => undefined);
       })
       .catch((err: unknown) => {
@@ -45,7 +45,7 @@ export function OidcCallbackPage() {
     return () => {
       cancelled = true;
     };
-  }, [navigate]);
+  }, [navigate, home]);
 
   if (error) {
     return (

@@ -12,6 +12,10 @@ import { LoginPage } from '@/pages/LoginPage';
 import { OidcCallbackPage } from '@/pages/OidcCallbackPage';
 import { OrganizationsPage } from '@/pages/OrganizationsPage';
 import { CfPPage } from '@/pages/CfPPage';
+import { CfPDetailPage, type CfPTab } from '@/pages/CfPDetailPage';
+import { EventTypesPage } from '@/pages/EventTypesPage';
+import { SchedulePage, type ScheduleTab } from '@/pages/SchedulePage';
+import { SubmissionReviewPage } from '@/pages/SubmissionReviewPage';
 import { getUserManager, isOidcAuthMode } from '@/auth/oidc';
 
 // In OIDC mode a route behind the Layout checks there is a cached user
@@ -86,10 +90,55 @@ const cfpRoute = createRoute({
   component: CfPPage,
 });
 
+const cfpDetailRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/cfp/$cfpId',
+  beforeLoad: ({ location }) => requireAuth(location.pathname),
+  validateSearch: (search: Record<string, unknown>): { tab: CfPTab } => ({
+    tab: search.tab === 'form' || search.tab === 'settings' ? search.tab : 'submissions',
+  }),
+  component: CfPDetailPage,
+});
+
+const submissionRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/submissions/$submissionId',
+  beforeLoad: ({ location }) => requireAuth(location.pathname),
+  component: SubmissionReviewPage,
+});
+
+const eventTypesRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/event-types',
+  beforeLoad: ({ location }) => requireAuth(location.pathname),
+  component: EventTypesPage,
+});
+
+const SCHEDULE_TABS: ScheduleTab[] = ['build', 'live', 'versions', 'setup'];
+
+const scheduleRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/schedule',
+  beforeLoad: ({ location }) => requireAuth(location.pathname),
+  validateSearch: (search: Record<string, unknown>): { tab: ScheduleTab } => ({
+    tab: SCHEDULE_TABS.includes(search.tab as ScheduleTab) ? (search.tab as ScheduleTab) : 'build',
+  }),
+  component: SchedulePage,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   authCallbackRoute,
-  appLayoutRoute.addChildren([indexRoute, dashboardRoute, organizationsRoute, cfpRoute]),
+  appLayoutRoute.addChildren([
+    indexRoute,
+    dashboardRoute,
+    organizationsRoute,
+    cfpRoute,
+    cfpDetailRoute,
+    submissionRoute,
+    eventTypesRoute,
+    scheduleRoute,
+  ]),
 ]);
 
 export const router = createRouter({ routeTree });

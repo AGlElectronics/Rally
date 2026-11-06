@@ -25,14 +25,22 @@ ARG VITE_OIDC_CLIENT_ID=
 ARG VITE_OIDC_SCOPE=openid profile email
 ARG VITE_API_BASE_URL=
 ARG VITE_PRODUCT_NAME=Rally
+# The submit app's key for the public schedule API (pair it with the
+# backend's PUBLIC_API_BUILTIN_KEY). It ships to every browser: rotation
+# and per-client tracking, not secrecy.
+ARG VITE_PUBLIC_SCHEDULE_KEY=
 ARG RALLY_VERSION=dev
+# staff (default) or submit: which app this image serves.
+ARG RALLY_APP=staff
 
-ENV VITE_AUTH_MODE=$VITE_AUTH_MODE \
+ENV RALLY_APP=$RALLY_APP \
+    VITE_AUTH_MODE=$VITE_AUTH_MODE \
     VITE_OIDC_AUTHORITY=$VITE_OIDC_AUTHORITY \
     VITE_OIDC_CLIENT_ID=$VITE_OIDC_CLIENT_ID \
     VITE_OIDC_SCOPE=$VITE_OIDC_SCOPE \
     VITE_API_BASE_URL=$VITE_API_BASE_URL \
     VITE_PRODUCT_NAME=$VITE_PRODUCT_NAME \
+    VITE_PUBLIC_SCHEDULE_KEY=$VITE_PUBLIC_SCHEDULE_KEY \
     RALLY_VERSION=$RALLY_VERSION
 
 # Fail fast if someone asks for oidc but forgets authority/client id (avoids

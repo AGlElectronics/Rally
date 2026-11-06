@@ -13,6 +13,10 @@ export type ApiBrand = {
   cssVariables?: Record<string, string>;
   /** Den's theme (hex colours) when paired; absent when standalone. */
   theme?: Record<string, unknown>;
+  /** Login screen background from Den: picture, "panel" | "centered", caption. */
+  loginBackgroundUrl?: string;
+  loginLayout?: string;
+  loginCaption?: string;
 };
 
 /** Unauthenticated — called at app boot before the login screen renders. */

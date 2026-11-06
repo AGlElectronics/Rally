@@ -25,6 +25,7 @@ import (
 	"github.com/AGlElectronics/rally/backend/internal/denlink"
 	"github.com/AGlElectronics/rally/backend/internal/config"
 	"github.com/AGlElectronics/rally/backend/internal/db"
+	"github.com/AGlElectronics/rally/backend/internal/events"
 	"github.com/AGlElectronics/rally/backend/internal/files"
 	httpx "github.com/AGlElectronics/rally/backend/internal/http"
 )
@@ -84,6 +85,21 @@ func Run(ctx context.Context, logger zerolog.Logger) error {
 		logger.Info().Str("issuer", cfg.OIDCIssuerURL).Msg("oidc verifier ready")
 	}
 
+	// Attendee realm for the public submission site. Optional: without it
+	// the site lists open calls but can't sign anyone in.
+	var attendeeVerifier *auth.OIDCVerifier
+	if cfg.AuthMode == config.AuthModeOIDC && cfg.AttendeeOIDCIssuerURL != "" {
+		attCtx, cancelAtt := context.WithTimeout(ctx, 30*time.Second)
+		attendeeVerifier, err = auth.NewOIDCVerifierFor(attCtx, cfg.AttendeeOIDCIssuerURL, cfg.AttendeeOIDCClientID)
+		cancelAtt()
+		if err != nil {
+			return fmt.Errorf("init attendee oidc verifier: %w", err)
+		}
+		logger.Info().Str("issuer", cfg.AttendeeOIDCIssuerURL).Msg("attendee oidc verifier ready")
+	} else if cfg.AuthMode == config.AuthModeOIDC {
+		logger.Warn().Msg("ATTENDEE_OIDC_ISSUER_URL not set — public submission sign-in is disabled")
+	}
+
 	// Access config catalog. The scaffold ships a built-in default; the
 	// TOML/JSON loader stub ensures a bogus ACCESS_CONFIG_PATH fails loudly.
 	var access *auth.AccessConfig
@@ -105,15 +121,28 @@ func Run(ctx context.Context, logger zerolog.Logger) error {
 	den := denlink.New(pool, denlink.Config{Slug: "events", Version: Version, InternalURL: cfg.DenInternalURL}, logger)
 	go den.Run(ctx)
 
+	fileSvc := events.NewFileService(pool, filesClient)
+	go fileSvc.Run(ctx, logger)
+
+	// The public schedule API needs a key; the builtin "programme-page"
+	// one comes from config so the submission site can use it.
+	keySvc := events.NewKeyService(pool)
+	if err := keySvc.EnsureBuiltin(ctx, cfg.PublicAPIBuiltinKey); err != nil {
+		return fmt.Errorf("ensure builtin public API key: %w", err)
+	}
+
 	router := httpx.NewRouter(httpx.Deps{
-		Config:       cfg,
-		Pool:         pool,
-		Logger:       logger,
-		Files:        filesClient,
-		Brand:        brandProvider,
-		Den:          den,
-		OIDCVerifier: oidcVerifier,
-		Access:       access,
+		Config:           cfg,
+		Pool:             pool,
+		Logger:           logger,
+		Files:            filesClient,
+		FileService:      fileSvc,
+		Keys:             keySvc,
+		Brand:            brandProvider,
+		Den:              den,
+		OIDCVerifier:     oidcVerifier,
+		AttendeeVerifier: attendeeVerifier,
+		Access:           access,
 	}, Version)
 
 	server := &nethttp.Server{

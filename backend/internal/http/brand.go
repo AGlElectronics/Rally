@@ -18,7 +18,7 @@ type brandHandler struct {
 	den      *denlink.Client
 }
 
-const brandLogoPath = "/api/v1/brand/logo"
+const brandAssetBase = "/api/v1/brand"
 
 // requirePermission rejects callers that hold perm nowhere.
 func requirePermission(perm string) func(http.Handler) http.Handler {
@@ -44,9 +44,12 @@ func (h *brandHandler) get(w http.ResponseWriter, r *http.Request) {
 		if bundle.Brand.OrganizationName != "" {
 			b.OrganizationName = bundle.Brand.OrganizationName
 		}
-		if logo := h.den.LogoURL(brandLogoPath); logo != "" {
+		if logo := h.den.AssetURL(brandAssetBase, denlink.AssetLogo); logo != "" {
 			b.LogoURL = logo
 		}
+		b.LoginBackgroundURL = h.den.AssetURL(brandAssetBase, denlink.AssetLoginBackground)
+		b.LoginLayout, _ = bundle.Brand.Copy["login_layout"].(string)
+		b.LoginCaption, _ = bundle.Brand.Copy["login_caption"].(string)
 		b.Theme = bundle.Brand.Theme
 		if p, ok := bundle.Brand.Theme["primary"].(string); ok && p != "" {
 			if b.Colors == nil {

@@ -1,193 +1,147 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { PageHeader } from '@/components/ui/PageHeader';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link, useNavigate } from '@tanstack/react-router';
+import { CalendarRange, ChevronRight, Plus } from 'lucide-react';
+import { createCfP, listCfPs, listSubmissions, type CallForPapers } from '@/api/cfp';
+import { errorText } from '@/api/client';
+import { EditionPicker } from '@/components/EditionPicker';
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
+import { Card, CardContent } from '@/components/ui/Card';
 import { Input, Label } from '@/components/ui/Input';
-import {
-  acceptSubmission,
-  createCfP,
-  createSubmission,
-  listCfPs,
-  listEditions,
-  listSubmissions,
-  rejectSubmission,
-  submitSubmission,
-} from '@/api/cfp';
-import { ApiError } from '@/api/client';
+import { PageContainer, PageHeader } from '@/components/ui/PageHeader';
+import { Pill, type Tone } from '@/components/ui/Pill';
+import { EmptyState, ErrorRow, LoadingRow } from '@/components/ui/States';
+import { useEdition } from '@/hooks/useEdition';
+import { PERMS, useMe } from '@/hooks/useMe';
+
+const STATUS_TONE: Record<CallForPapers['status'], Tone> = { draft: 'neutral', open: 'success', closed: 'warning' };
+
+export function formatWhen(iso?: string | null): string {
+  return iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '';
+}
 
 export function CfPPage() {
+  const { editions, edition, setEditionId, isLoading, error } = useEdition();
+  const { can } = useMe();
   const qc = useQueryClient();
-  const editions = useQuery({ queryKey: ['editions'], queryFn: listEditions });
-  const [editionId, setEditionId] = useState<string>('');
-  const activeEdition =
-    editionId || editions.data?.items[0]?.id || '00000000-0000-0000-0000-000000000030';
+  const navigate = useNavigate();
+  const [creating, setCreating] = useState(false);
+  const [title, setTitle] = useState('');
 
   const cfps = useQuery({
-    queryKey: ['cfps', activeEdition],
-    queryFn: () => listCfPs(activeEdition),
-    enabled: !!activeEdition,
+    queryKey: ['cfps', edition?.id],
+    queryFn: () => listCfPs(edition!.id),
+    enabled: !!edition,
   });
-  const openCfp = cfps.data?.items.find((c) => c.status === 'open') ?? cfps.data?.items[0];
-
   const subs = useQuery({
-    queryKey: ['subs', activeEdition, openCfp?.id],
-    queryFn: () => listSubmissions(activeEdition, { cfp_id: openCfp?.id }),
-    enabled: !!activeEdition && !!openCfp?.id,
+    queryKey: ['submissions', edition?.id, 'all'],
+    queryFn: () => listSubmissions(edition!.id),
+    enabled: !!edition && can(PERMS.submissionReview),
   });
 
-  const [title, setTitle] = useState('Demo CfP');
-  const [talkTitle, setTalkTitle] = useState('');
-  const [abstract, setAbstract] = useState('');
-  const [speaker, setSpeaker] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const create = useMutation({
+    mutationFn: () => createCfP(edition!.id, { title: title.trim(), description: '', status: 'draft' }),
+    onSuccess: (c) => {
+      void qc.invalidateQueries({ queryKey: ['cfps'] });
+      void navigate({ to: '/cfp/$cfpId', params: { cfpId: c.id }, search: { tab: 'form' } });
+    },
+  });
 
-  const invalidate = () => {
-    void qc.invalidateQueries({ queryKey: ['cfps'] });
-    void qc.invalidateQueries({ queryKey: ['subs'] });
+  const counts = (cfpId: string) => {
+    const items = (subs.data?.items ?? []).filter((s) => s.cfp_id === cfpId && s.state !== 'draft');
+    return { total: items.length, waiting: items.filter((s) => s.state === 'submitted').length };
   };
 
-  const openMutation = useMutation({
-    mutationFn: () =>
-      createCfP(activeEdition, { title, description: 'Open for talk proposals', status: 'open' }),
-    onSuccess: () => {
-      setError(null);
-      invalidate();
-    },
-    onError: (e: unknown) => setError(e instanceof ApiError ? e.message : 'Failed to open CfP'),
-  });
-
-  const createTalk = useMutation({
-    mutationFn: async () => {
-      if (!openCfp) throw new Error('No open CfP');
-      const s = await createSubmission(openCfp.id, {
-        title: talkTitle,
-        abstract,
-        speakers: [{ name: speaker || 'Speaker' }],
-      });
-      return submitSubmission(s.id);
-    },
-    onSuccess: () => {
-      setTalkTitle('');
-      setAbstract('');
-      setSpeaker('');
-      setError(null);
-      invalidate();
-    },
-    onError: (e: unknown) => setError(e instanceof ApiError ? e.message : 'Submit failed'),
-  });
-
-  const decide = useMutation({
-    mutationFn: async ({ id, ok }: { id: string; ok: boolean }) =>
-      ok ? acceptSubmission(id, 'Accepted') : rejectSubmission(id, 'Not a fit'),
-    onSuccess: () => invalidate(),
-    onError: (e: unknown) => setError(e instanceof ApiError ? e.message : 'Decision failed'),
-  });
-
   return (
-    <div className="space-y-6">
+    <PageContainer>
       <PageHeader
-        title="Call for papers"
-        description="Open a CfP on an edition, submit a talk, and accept or reject proposals."
+        title="Calls for papers"
+        description={edition ? `Submission calls for ${edition.title}.` : undefined}
+        actions={
+          <>
+            <EditionPicker editions={editions} edition={edition} onChange={setEditionId} />
+            {can(PERMS.cfpManage) && edition ? (
+              <Button onClick={() => setCreating(true)}>
+                <Plus className="h-4 w-4" />
+                New call
+              </Button>
+            ) : null}
+          </>
+        }
       />
 
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
-      <Card className="space-y-3 p-4">
-        <Label>Edition</Label>
-        <select
-          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-          value={activeEdition}
-          onChange={(e) => setEditionId(e.target.value)}
-        >
-          {(editions.data?.items ?? []).map((ed) => (
-            <option key={ed.id} value={ed.id}>
-              {ed.title}
-            </option>
-          ))}
-        </select>
-        {!openCfp ? (
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="min-w-[12rem] flex-1">
-              <Label htmlFor="cfp-title">CfP title</Label>
-              <Input id="cfp-title" value={title} onChange={(e) => setTitle(e.target.value)} />
-            </div>
-            <Button onClick={() => openMutation.mutate()} disabled={openMutation.isPending}>
-              Open CfP
-            </Button>
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            Active CfP: <span className="font-medium text-foreground">{openCfp.title}</span> (
-            {openCfp.status})
-          </p>
-        )}
-      </Card>
-
-      {openCfp ? (
-        <Card className="space-y-3 p-4">
-          <h2 className="font-heading text-lg font-semibold">New submission</h2>
-          <div>
-            <Label htmlFor="talk-title">Talk title</Label>
-            <Input
-              id="talk-title"
-              value={talkTitle}
-              onChange={(e) => setTalkTitle(e.target.value)}
-            />
-          </div>
-          <div>
-            <Label htmlFor="speaker">Speaker</Label>
-            <Input id="speaker" value={speaker} onChange={(e) => setSpeaker(e.target.value)} />
-          </div>
-          <div>
-            <Label htmlFor="abstract">Abstract</Label>
-            <textarea
-              id="abstract"
-              className="min-h-24 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-              value={abstract}
-              onChange={(e) => setAbstract(e.target.value)}
-            />
-          </div>
-          <Button
-            onClick={() => createTalk.mutate()}
-            disabled={!talkTitle || !abstract || createTalk.isPending}
-          >
-            Submit talk
-          </Button>
+      {creating ? (
+        <Card className="mb-4">
+          <CardContent>
+            <form
+              className="flex flex-wrap items-end gap-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (title.trim()) create.mutate();
+              }}
+            >
+              <div className="min-w-64 flex-1">
+                <Label htmlFor="new-cfp">Title</Label>
+                <Input
+                  id="new-cfp"
+                  autoFocus
+                  value={title}
+                  placeholder="e.g. Panels & workshops"
+                  onChange={(e) => setTitle(e.target.value)}
+                />
+              </div>
+              <Button type="submit" disabled={!title.trim() || create.isPending}>
+                Create as draft
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => setCreating(false)}>
+                Cancel
+              </Button>
+            </form>
+            {create.error ? <p className="mt-2 text-sm text-destructive">{errorText(create.error)}</p> : null}
+          </CardContent>
         </Card>
       ) : null}
 
-      <Card className="space-y-2 p-4">
-        <h2 className="font-heading text-lg font-semibold">Submissions</h2>
-        {(subs.data?.items ?? []).length === 0 ? (
-          <p className="text-sm text-muted-foreground">No submissions yet.</p>
-        ) : (
-          <ul className="divide-y divide-border">
-            {(subs.data?.items ?? []).map((s) => (
-              <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
-                <div>
-                  <div className="font-medium">{s.title}</div>
-                  <div className="text-xs text-muted-foreground">{s.state}</div>
-                </div>
-                {s.state === 'submitted' ? (
-                  <div className="flex gap-2">
-                    <Button size="sm" onClick={() => decide.mutate({ id: s.id, ok: true })}>
-                      Accept
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => decide.mutate({ id: s.id, ok: false })}
-                    >
-                      Reject
-                    </Button>
-                  </div>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-    </div>
+      {isLoading || cfps.isLoading ? (
+        <LoadingRow />
+      ) : error || cfps.error ? (
+        <ErrorRow message={errorText(error || cfps.error)} />
+      ) : !edition ? (
+        <EmptyState icon={CalendarRange} title="No editions yet" description="Create an edition first, then open calls on it." />
+      ) : (cfps.data?.items ?? []).length === 0 ? (
+        <EmptyState
+          icon={CalendarRange}
+          title="No calls yet"
+          description="A call collects submissions through a form you design: panels, workshops, performances, anything."
+        />
+      ) : (
+        <div className="grid gap-3">
+          {cfps.data!.items.map((c) => {
+            const n = counts(c.id);
+            return (
+              <Link key={c.id} to="/cfp/$cfpId" params={{ cfpId: c.id }} search={{ tab: 'submissions' }}>
+                <Card clickable>
+                  <CardContent className="flex items-center gap-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-heading font-bold">{c.title}</span>
+                        <Pill tone={STATUS_TONE[c.status]}>{c.status}</Pill>
+                        {c.review_mode === 'scored' ? <Pill>scored review</Pill> : null}
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {c.form.fields.filter((f) => !f.archived).length} questions
+                        {c.closes_at ? ` · closes ${formatWhen(c.closes_at)}` : ''}
+                        {subs.data ? ` · ${n.total} submitted, ${n.waiting} awaiting a decision` : ''}
+                      </p>
+                    </div>
+                    <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                  </CardContent>
+                </Card>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </PageContainer>
   );
 }

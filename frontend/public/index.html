@@ -2,19 +2,15 @@
 <html lang="en">
   <head>
     <script>
-      // Apply the saved theme BEFORE the SPA mounts so the initial paint
-      // doesn't flash the wrong palette. Keyed per product so a shared
-      // domain doesn't collide between Stash and Rally.
+      // Apply the cached light/dark choice before first paint (see src/lib/theme.ts).
       (function () {
+        var p = 'system';
         try {
-          if (localStorage.getItem('rally-theme') === 'light') {
-            document.documentElement.classList.remove('dark');
-          } else {
-            document.documentElement.classList.add('dark');
-          }
-        } catch (e) {
-          document.documentElement.classList.add('dark');
-        }
+          p = localStorage.getItem('cs-theme') || localStorage.getItem('rally-theme') || 'system';
+        } catch (e) {}
+        var dark = p === 'dark' || (p !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.classList.toggle('dark', dark);
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
       })();
     </script>
     <meta charset="UTF-8" />

@@ -11,7 +11,8 @@
 #   Edition:      edition.view  edition.edit
 #   Members:      member.view  member.manage
 #   Audit:        audit.view
-#   CfP:          cfp.manage  submission.review
+#   CfP:          cfp.manage  submission.review  submission.decide
+#   Schedule:     schedule.edit  schedule.publish
 #
 # A role listed here replaces its built-in permission set entirely.
 
@@ -30,24 +31,30 @@ permissions = [
   "edition.view", "edition.edit",
   "member.view", "member.manage",
   "audit.view",
-  "cfp.manage", "submission.review",
+  "cfp.manage", "submission.review", "submission.decide",
+  "schedule.edit", "schedule.publish",
 ]
 
 [roles.edition_organizer]
-description = "Runs editions: CfPs, submission review, members."
+description = "Events lead: runs editions and calls for papers, decides on submissions, builds and publishes the schedule."
 permissions = [
   "org.view",
   "edition.view", "edition.edit",
   "member.view", "audit.view",
-  "cfp.manage", "submission.review",
+  "cfp.manage", "submission.review", "submission.decide",
+  "schedule.edit", "schedule.publish",
 ]
 
 [roles.programme_manager]
-description = "Reviews and curates submissions for the programme."
-permissions = ["org.view", "edition.view", "member.view", "submission.review"]
+description = "Curates the programme: decides on submissions, builds and publishes the schedule."
+permissions = [
+  "org.view", "edition.view", "member.view",
+  "submission.review", "submission.decide",
+  "schedule.edit", "schedule.publish",
+]
 
 [roles.reviewer]
-description = "Reviews submissions."
+description = "Reads, comments on and scores submissions; the lead decides."
 permissions = ["org.view", "edition.view", "submission.review"]
 
 [roles.submitter]

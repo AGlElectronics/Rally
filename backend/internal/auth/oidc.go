@@ -25,6 +25,7 @@ type OIDCClaims struct {
 	Issuer            string   `json:"iss"`
 	Subject           string   `json:"sub"`
 	Email             string   `json:"email"`
+	EmailVerified     bool     `json:"email_verified"`
 	PreferredUsername string   `json:"preferred_username"`
 	Name              string   `json:"name"`
 	Nickname          string   `json:"nickname"`
@@ -39,17 +40,24 @@ func NewOIDCVerifier(ctx context.Context, cfg *config.Config) (*OIDCVerifier, er
 	if cfg.OIDCIssuerURL == "" || cfg.OIDCClientID == "" {
 		return nil, errors.New("OIDC verifier requires OIDC_ISSUER_URL and OIDC_CLIENT_ID")
 	}
-	provider, err := oidc.NewProvider(ctx, cfg.OIDCIssuerURL)
-	if err != nil {
-		return nil, fmt.Errorf("oidc discovery: %w", err)
-	}
 	audience := cfg.OIDCAudience
 	if audience == "" {
 		audience = cfg.OIDCClientID
 	}
+	return NewOIDCVerifierFor(ctx, cfg.OIDCIssuerURL, audience)
+}
+
+// NewOIDCVerifierFor builds a verifier for one issuer and audience. Staff and
+// attendees each get their own, so a token from one realm never passes the
+// other's checks.
+func NewOIDCVerifierFor(ctx context.Context, issuer, audience string) (*OIDCVerifier, error) {
+	provider, err := oidc.NewProvider(ctx, issuer)
+	if err != nil {
+		return nil, fmt.Errorf("oidc discovery: %w", err)
+	}
 	return &OIDCVerifier{
 		verifier: provider.Verifier(&oidc.Config{ClientID: audience}),
-		issuer:   cfg.OIDCIssuerURL,
+		issuer:   issuer,
 	}, nil
 }
 
