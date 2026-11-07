@@ -33,21 +33,21 @@ const (
 
 // CallForPapers is the API-shaped projection of a call_for_papers row.
 type CallForPapers struct {
-	ID             uuid.UUID  `json:"id"`
-	OrganizationID uuid.UUID  `json:"organization_id"`
-	EditionID      uuid.UUID  `json:"edition_id"`
-	Title          string     `json:"title"`
-	Description    string     `json:"description"`
-	Status         string     `json:"status"`
-	OpensAt        *time.Time `json:"opens_at"`
-	ClosesAt       *time.Time `json:"closes_at"`
+	ID             uuid.UUID         `json:"id"`
+	OrganizationID uuid.UUID         `json:"organization_id"`
+	EditionID      uuid.UUID         `json:"edition_id"`
+	Title          string            `json:"title"`
+	Description    string            `json:"description"`
+	Status         string            `json:"status"`
+	OpensAt        *time.Time        `json:"opens_at"`
+	ClosesAt       *time.Time        `json:"closes_at"`
 	Form           Form              `json:"form"`
 	ReviewMode     string            `json:"review_mode"`
 	EventTypeIDs   []uuid.UUID       `json:"event_type_ids"`
 	StatusLabels   map[string]string `json:"status_labels"`
-	CreatedBy      *uuid.UUID `json:"created_by,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	CreatedBy      *uuid.UUID        `json:"created_by,omitempty"`
+	CreatedAt      time.Time         `json:"created_at"`
+	UpdatedAt      time.Time         `json:"updated_at"`
 }
 
 // Review modes of a call for papers.

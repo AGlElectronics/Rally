@@ -17,8 +17,8 @@ The runtime behaviour the manifests enforce today:
    long as the process is alive; `/readyz` ping-tests the DB and returns 503
    while it is unreachable. The frontend `Deployment` uses the same split.
 
-3. **No MinIO in production.** The compose stack runs MinIO for local dev
-   only. For K8s, point `S3_*` env at a managed S3-compatible bucket (AWS
+3. **No in-cluster object storage in production.** The compose stack runs
+   SeaweedFS (service `s3`) for local dev only. For K8s, point `S3_*` env at a managed S3-compatible bucket (AWS
    S3, GCS S3 interop, Backblaze B2, etc.) via a `Secret`. See
    [`../../docs/adr/0004-minio-never-production.md`](../../docs/adr/0004-minio-never-production.md).
 

@@ -5,6 +5,8 @@
 - **Deciders:** Rally engineering
 - **Related:** `techstack.md` §7 (files, attachments)
 
+> **Update 2026-11-07:** MinIO stopped publishing community images, so the development and local-trial S3 server is now SeaweedFS (`chrislusf/seaweedfs:4.52`, service `s3`). The decision is unchanged: the bundled S3 server is for development and local trials only, and production uses a managed S3 service.
+
 ## Context
 
 Rally's object-storage interface is deliberately provider-neutral: the Go

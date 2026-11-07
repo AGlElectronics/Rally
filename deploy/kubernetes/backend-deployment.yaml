@@ -32,7 +32,7 @@ spec:
         fsGroup: 65532
       containers:
         - name: backend
-          image: ghcr.io/aglelectronics/rally-backend:latest  # pin to digest in real deploys
+          image: ghcr.io/aglelectronics/rally-backend:1.0.0-1
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

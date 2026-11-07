@@ -2,6 +2,31 @@
 # /api/* to the backend Service. Build the image with
 # `--build-arg NGINX_CONF=nginx.k8s.conf` so the upstream points at
 # rally-backend.
+#
+# The image names no domain: the sign-in settings come from the ConfigMap
+# below, served to the browser as /config.json. Put your own sign-in address
+# in it. Keys: "Web app settings (config.json)" on
+# https://aglelectronics.github.io/con-services/modules/rally/configuration/
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rally-frontend-config
+  namespace: rally
+  labels:
+    app.kubernetes.io/name: rally
+    app.kubernetes.io/component: frontend
+data:
+  config.json: |
+    {
+      "authMode": "oidc",
+      "oidcAuthority": "https://auth.conservices.test/realms/conservices",
+      "oidcClientId": "events-spa",
+      "oidcScope": "openid profile email",
+      "apiBaseUrl": "",
+      "productName": "Rally",
+      "publicScheduleKey": ""
+    }
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -25,13 +50,15 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
       containers:
         - name: nginx
-          image: ghcr.io/aglelectronics/rally-frontend:latest  # pin to digest
+          image: ghcr.io/aglelectronics/rally-frontend:1.0.0-1
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
-              containerPort: 80
+              containerPort: 8080
           livenessProbe:
             httpGet: { path: /, port: http }
             initialDelaySeconds: 3
@@ -43,6 +70,16 @@ spec:
           resources:
             requests: { cpu: "25m", memory: "32Mi" }
             limits:   { cpu: "200m", memory: "128Mi" }
+          volumeMounts:
+            # Served as /config.json. No subPath: an edited ConfigMap shows
+            # up in place within a minute or two, no restart needed.
+            - name: frontend-config
+              mountPath: /etc/conservices
+              readOnly: true
+      volumes:
+        - name: frontend-config
+          configMap:
+            name: rally-frontend-config
 ---
 apiVersion: v1
 kind: Service

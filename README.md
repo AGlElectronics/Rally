@@ -8,12 +8,13 @@ Telegram announcements. See `docs/` for the full architecture and
 `docs/poc-requirements.md` for the current scope; this README is strictly
 about getting the stack running locally.
 
-- **Backend:** Go 1.25, chi, pgx (hand-written queries — `sqlc.yaml` is
+- **Backend:** Go 1.27, chi, pgx (hand-written queries — `sqlc.yaml` is
   wired for a later pass, see the note at the top of that file).
 - **Frontend:** React 19 + Rsbuild + TanStack Router/Query + Tailwind.
 - **Database:** PostgreSQL 16, migrated via Goose (`cmd/migrate` one-shot).
-- **Object storage:** MinIO (via `minio-go` v7) — **LOCAL DEV ONLY**, never
-  deploy in production (ADR-0004).
+- **Object storage:** any S3-compatible service (via `minio-go` v7). The
+  standalone stack runs SeaweedFS (`chrislusf/seaweedfs:4.52`) — **LOCAL DEV
+  ONLY**, never deploy it in production (ADR-0004).
 - **Go module:** `github.com/AGlElectronics/rally/backend`.
 
 ## Reserved ports
@@ -23,8 +24,7 @@ about getting the stack running locally.
 | backend (API)   | **8100**  | 8080           |
 | frontend (SPA)  | **3002**  | 80             |
 | postgres        | 5435      | 5432           |
-| MinIO S3 API    | 9020      | 9000           |
-| MinIO console   | 9021      | 9001           |
+| s3 (SeaweedFS)  | 9020      | 9000           |
 
 Every module in this ecosystem binds `:8080` *inside* its container; the
 host-side port is reserved per-module (Rally = 8100) and the Compose file
@@ -33,19 +33,29 @@ colliding with `stash` (8080/3000) and `hr` (8110/3003).
 
 ## Auth modes
 
-Set `AUTH_MODE` on the backend AND the matching `VITE_AUTH_MODE` on the
-frontend build:
+Set `AUTH_MODE` on the backend AND the matching `authMode` in the web app's
+`/config.json` (see "Web app settings" below):
 
 - `AUTH_MODE=dev` — the backend reads `X-Dev-User` (or `DEV_DEFAULT_USER`)
   and auto-provisions a local user under the reserved `dev` issuer. The
   SPA stamps the header from `localStorage['rally.devUser']`.
 - `AUTH_MODE=oidc` — the backend verifies a Bearer JWT via OIDC
   discovery. The SPA uses `oidc-client-ts` to run the authorisation-code
-  flow against `VITE_OIDC_AUTHORITY` / `VITE_OIDC_CLIENT_ID`.
+  flow against `oidcAuthority` / `oidcClientId` from `/config.json`.
 
 `AUTH_MODE=oidc` requires both `OIDC_ISSUER_URL` and `OIDC_CLIENT_ID` to
-be set on the backend; the Dockerfile.frontend fails the build if the
-matching `VITE_OIDC_*` build-args are missing.
+be set on the backend; the web app shows "Not configured yet" while
+`oidcAuthority` or `oidcClientId` is empty.
+
+### Web app settings
+
+The frontend images name no domain. At start-up the web app loads
+`/config.json` (nginx serves `/etc/conservices/config.json`, never cached)
+with `authMode`, `oidcAuthority`, `oidcClientId`, `oidcScope`, `apiBaseUrl`,
+`productName` and, on the submission site, `publicScheduleKey`. The Compose
+stack mounts `infra/frontend-config/compose.json` (dev sign-in; set
+`FRONTEND_CONFIG` to use another file). Full reference:
+<https://aglelectronics.github.io/con-services/modules/rally/configuration/#web-app-settings-configjson>.
 
 ### Attendee accounts (submission site)
 
@@ -62,8 +72,9 @@ Dev test attendees: `ada@attendee.test` / `attendee` and
 
 `frontend/` builds either the staff app (default) or the public submission
 site (`RALLY_APP=submit`, entry `src/submit/main.tsx`, dev port 3004). The
-Dockerfile takes `--build-arg RALLY_APP=submit`; `VITE_PRODUCT_NAME` names
-the public site. `npm run typecheck` checks both programs.
+Dockerfile takes `--build-arg RALLY_APP=submit`; `productName` in its
+`/config.json` names the public site. `npm run typecheck` checks both
+programs.
 
 In the full stack the submission site is served at
 `https://submit.conservices.test` (re-run `scripts/setup-local-dns.ps1` as
@@ -122,8 +133,8 @@ for calendar subscriptions (they cannot send headers). Staff with
 (`GET/POST /api/v1/public-api-keys`, `DELETE /api/v1/public-api-keys/{id}`);
 a key's value is shown once and only its SHA-256 is stored. The submission
 site's Programme page uses the builtin "programme-page" key
-(`PUBLIC_API_BUILTIN_KEY` on the backend = `VITE_PUBLIC_SCHEDULE_KEY` on the
-submit build; it ships to every browser, so it buys rotation and per-client
+(`PUBLIC_API_BUILTIN_KEY` on the backend = `publicScheduleKey` in the
+submission site's `/config.json`; it ships to every browser, so it buys rotation and per-client
 tracking, not secrecy — change the env value to rotate it).
 
 These send `ETag` and `Cache-Control: private, max-age=60`. The on/off
@@ -173,7 +184,8 @@ docker compose -f infra/docker-compose.yml up --build
 What happens:
 
 1. `postgres` boots and reports healthy.
-2. `minio` + `minio-init` run; the `events-data-dev` bucket is created.
+2. `s3` (SeaweedFS) starts and creates the `events-data-dev` bucket; it
+   reports healthy once the bucket exists.
 3. `migrate` (one-shot) applies all pending Goose migrations and exits 0.
 4. `backend` starts on container `:8080`, published on host `:8100`. It
    does **not** auto-migrate (ADR-0003).
@@ -203,15 +215,21 @@ works from the `Rally/` directory. All three Dockerfiles expect the build
 context to be `Rally/` (not `Rally/backend` or `Rally/frontend`) so they
 can see both the source tree and `infra/nginx.conf`.
 
-To build the frontend for an OIDC deployment:
+The frontend image works for any OIDC deployment; give it its settings at
+run time:
 
 ```sh
-docker build \
-  -f infra/Dockerfile.frontend \
-  --build-arg VITE_AUTH_MODE=oidc \
-  --build-arg VITE_OIDC_AUTHORITY=https://keycloak.example.com/realms/rally \
-  --build-arg VITE_OIDC_CLIENT_ID=rally-spa \
-  -t rally-frontend .
+cat > config.json <<'EOF'
+{
+  "authMode": "oidc",
+  "oidcAuthority": "https://keycloak.example.com/realms/rally",
+  "oidcClientId": "rally-spa"
+}
+EOF
+# on a Docker network where the API answers as backend:8080
+docker run --rm -p 3002:8080 --network rally-net \
+  -v "$PWD/config.json:/etc/conservices/config.json:ro" \
+  rally-frontend
 ```
 
 ## Backups

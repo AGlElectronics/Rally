@@ -4,10 +4,11 @@
 // too. The auth-headers resolver is injected at startup from
 // src/auth/installAuth.ts.
 
-const API_BASE_URL =
+import { runtimeConfig } from '@/runtime-config';
+
+const apiBaseUrl = () =>
   (typeof process !== 'undefined' ? process.env.RALLY_API_BASE_URL : undefined) ??
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) ??
-  '';
+  runtimeConfig().apiBaseUrl;
 
 export type ApiErrorBody = {
   error: {
@@ -75,7 +76,7 @@ type RequestOpts = {
 
 export async function apiRequest<T>(path: string, opts: RequestOpts = {}): Promise<T> {
   const url = new URL(
-    path.startsWith('http') ? path : `${API_BASE_URL}${path}`,
+    path.startsWith('http') ? path : `${apiBaseUrl()}${path}`,
     typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
   );
   if (opts.query) {

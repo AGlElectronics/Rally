@@ -17,11 +17,11 @@ import (
 
 // Note is an internal review comment; never shown to submitters.
 type Note struct {
-	ID         uuid.UUID `json:"id"`
+	ID         uuid.UUID  `json:"id"`
 	AuthorID   *uuid.UUID `json:"author_id"`
-	AuthorName string    `json:"author_name"`
-	Body       string    `json:"body"`
-	CreatedAt  time.Time `json:"created_at"`
+	AuthorName string     `json:"author_name"`
+	Body       string     `json:"body"`
+	CreatedAt  time.Time  `json:"created_at"`
 }
 
 // Score is one reviewer's 1-5 score.

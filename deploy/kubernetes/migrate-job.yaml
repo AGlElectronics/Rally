@@ -30,7 +30,7 @@ spec:
         runAsNonRoot: true
       containers:
         - name: migrate
-          image: ghcr.io/aglelectronics/rally-migrate:latest  # pin to a digest in real deploys
+          image: ghcr.io/aglelectronics/rally-migrate:1.0.0-1
           imagePullPolicy: IfNotPresent
           args: ["up"]
           env:

@@ -1,6 +1,7 @@
 import { apiRequest } from '@/api/client';
 import type { Submission } from '@/api/cfp';
 import type { AnswerValue, Form } from '@/lib/forms';
+import { runtimeConfig } from '@/runtime-config';
 
 export type { Person, Submission } from '@/api/cfp';
 
@@ -106,13 +107,15 @@ export type PublicSchedule = {
 };
 
 // The public schedule API requires an API key; the Programme page uses the
-// builtin "programme-page" one (VITE_PUBLIC_SCHEDULE_KEY, paired with the
+// builtin "programme-page" one (publicScheduleKey in /config.json, paired with the
 // backend's PUBLIC_API_BUILTIN_KEY). It ships with this bundle, so it buys
 // rotation and per-client tracking, not secrecy.
-const SCHEDULE_KEY = (import.meta.env.VITE_PUBLIC_SCHEDULE_KEY as string | undefined) ?? '';
-const scheduleHeaders = SCHEDULE_KEY ? { Authorization: `Bearer ${SCHEDULE_KEY}` } : undefined;
+const scheduleHeaders = () => {
+  const key = runtimeConfig().publicScheduleKey;
+  return key ? { Authorization: `Bearer ${key}` } : undefined;
+};
 
 export const listSchedules = () =>
-  apiRequest<{ items: PublicScheduleListing[] }>(`${PUBLIC_API}/schedules`, { headers: scheduleHeaders });
+  apiRequest<{ items: PublicScheduleListing[] }>(`${PUBLIC_API}/schedules`, { headers: scheduleHeaders() });
 export const getPublicSchedule = (edition: string) =>
-  apiRequest<PublicSchedule>(`${PUBLIC_API}/schedules/${edition}`, { headers: scheduleHeaders });
+  apiRequest<PublicSchedule>(`${PUBLIC_API}/schedules/${edition}`, { headers: scheduleHeaders() });
