@@ -1,5 +1,11 @@
 # Rally — Events & conventions
 
+> [!WARNING]
+> ## **NOT READY FOR PRODUCTION**
+>
+> Con Services is under active development. Expect breaking changes, missing
+> features and bugs. Do not use it for real events or real data yet.
+
 Rally is the convention / events module of the Con Services stack.
 Owns organisations, editions, memberships, calls for papers with
 configurable forms, the public submission site, staff review, the
