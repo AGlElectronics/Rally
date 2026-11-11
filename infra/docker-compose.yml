@@ -119,15 +119,20 @@ services:
       # Rewrite presigned URLs so the browser (which lives on the host) can
       # resolve them even though the backend talks to s3:9000.
       S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-http://localhost:9020}
-      # Auth: dev = X-Dev-User header; oidc = verify Bearer JWT.
+      # Auth: dev = X-Dev-User header (needs APP_ENV=development above);
+      # oidc = verify Bearer access tokens.
       AUTH_MODE: ${AUTH_MODE:-dev}
       DEV_DEFAULT_USER: dev-admin
       OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
-      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:-events-api}
       # Pairing with Den happens in the app (Settings → Den connection).
       # Set this when the pairing URL Den shows is not reachable from here.
       DEN_INTERNAL_URL: ${DEN_INTERNAL_URL:-}
+      # DEV ONLY (public value): encrypts the Den credential stored in the
+      # database. Production: one random key from your secret manager
+      # (openssl rand -base64 32).
+      DEN_LINK_ENCRYPTION_KEY: ${DEN_LINK_ENCRYPTION_KEY:-ZGV2LW9ubHktcmFsbHktZGVuLWxpbmsta2V5LTAwMDA=}
       # CORS only matters for `npm run dev` on the host — in prod the SPA
       # talks to /api via the nginx reverse proxy on the same origin.
       CORS_ALLOWED_ORIGINS: http://localhost:3002
@@ -146,6 +151,11 @@ services:
       # Web app settings (/config.json). Dev sign-in by default; for real
       # sign-in set FRONTEND_CONFIG to your own file (docs: configuration).
       - ${FRONTEND_CONFIG:-./frontend-config/compose.json}:/etc/conservices/config.json:ro
+    environment:
+      # Origins allowed by the Content-Security-Policy besides the app:
+      # the sign-in server (empty with dev sign-in) and the upload bucket.
+      KEYCLOAK_ORIGIN: ${KEYCLOAK_ORIGIN:-}
+      S3_ORIGIN: ${S3_ORIGIN:-http://localhost:9020}
     restart: unless-stopped
     depends_on:
       - backend

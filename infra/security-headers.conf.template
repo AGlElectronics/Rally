@@ -1,0 +1,36 @@
+# Security headers for Rally's web apps (staff app and submission site).
+# Rally's copy of con-services shared/nginx/security-headers.conf; keep the
+# two in step. Docs: https://aglelectronics.github.io/con-services/concepts/shared-code/#nginx-security-headers
+#
+# The image is the same for every installation, so the two origins the
+# browser talks to besides the app are filled in when the container starts
+# (the nginx image's envsubst step writes /etc/nginx/snippets/security-headers.conf):
+#   KEYCLOAK_ORIGIN  the sign-in server of this app, e.g. https://auth.con.example.org
+#                    (the attendee realm's server for the submission site)
+#   S3_ORIGIN        where browsers upload attachments (S3_PUBLIC_BASE_URL),
+#                    e.g. https://s3.con.example.org
+# Origins are scheme + host (+ port), no path; empty leaves them out. The
+# Helm chart renders this file itself. The shared snippet's DEN_ORIGIN is
+# not used: Rally serves Den's brand assets from its own API.
+#
+# Included in every location that serves the app (nginx drops inherited
+# add_header lines in a location with its own), but not in /api/: the
+# backend sets the stricter API headers itself.
+
+# Scripts, styles, fonts and images only from the app itself; data: and blob:
+# images for previews; API calls to the app, the sign-in server and the
+# upload bucket. The app may not be framed by anyone, and forms post only to
+# itself or Keycloak.
+add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ${KEYCLOAK_ORIGIN} ${S3_ORIGIN}; frame-src 'self' ${KEYCLOAK_ORIGIN}; frame-ancestors 'none'; form-action 'self' ${KEYCLOAK_ORIGIN}; base-uri 'self'; object-src 'none'" always;
+
+# Older browsers that do not know frame-ancestors.
+add_header X-Frame-Options "DENY" always;
+
+# Never guess a content type from the bytes.
+add_header X-Content-Type-Options "nosniff" always;
+
+# Send only the origin to other sites, nothing over plain HTTP.
+add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+# Browser features: Rally uses none of them.
+add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()" always;
