@@ -35,6 +35,29 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Health' }
+  /api/role-catalog:
+    get:
+      summary: Roles for HR's access picker (role catalog contract)
+      description: The revision is also the ETag; If-None-Match gives 304.
+      security: [ { hrServiceToken: [] }, { bearer: [] }, { devHeader: [] } ]
+      responses:
+        "200": { description: The catalog }
+        "304": { description: Unchanged since the given ETag }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+  /api/den/state:
+    get:
+      summary: Den mode, pairing and revoked state (unauthenticated)
+      responses:
+        "200":
+          description: State
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mode: { type: string, enum: [required, standalone] }
+                  paired: { type: boolean }
+                  revoked: { type: boolean }
   /api/v1/brand:
     get:
       summary: Active brand package
@@ -60,12 +83,16 @@ components:
       type: apiKey
       in: header
       name: X-Dev-User
-      description: AUTH_MODE=dev only. Provisions a user under the reserved "dev" issuer.
+      description: AUTH_MODE=dev with APP_ENV=development only. Provisions a user under the reserved "dev" issuer.
     bearer:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: AUTH_MODE=oidc. Bearer ID token with aud=client_id.
+      description: AUTH_MODE=oidc. Access token whose aud contains OIDC_AUDIENCE (default events-api); ID tokens are refused.
+    hrServiceToken:
+      type: http
+      scheme: bearer
+      description: HR_SERVICE_TOKEN, sent by HR's backend; allows only GET /api/role-catalog.
   schemas:
     Status:
       type: object

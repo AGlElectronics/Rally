@@ -15,6 +15,15 @@
 #   Schedule:     schedule.edit  schedule.publish
 #
 # A role listed here replaces its built-in permission set entirely.
+#
+# HR's access picker marks a role "privileged" (asks for confirmation, lists
+# it on offboarding) when it can change settings, grant access or see other
+# people's data. Rally derives it from the permissions; `privileged = true`
+# or `false` under a role overrides that.
+#
+# Groups in bindings are compared with the shared rule: case-insensitive,
+# without a leading "/", whole paths unless OIDC_GROUP_MATCH=last, with
+# OIDC_GROUP_PREFIX removed, and only from the OIDC_GROUPS_CLAIM claim.
 
 # Organization (slug) that bindings grant roles in, unless a binding sets
 # its own `organization`.

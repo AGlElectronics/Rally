@@ -76,9 +76,80 @@ version. Rebuilds get no entry here.
 - CI on every pull request (tests, lint, Trivy scans) and signed images with
   an SBOM published to GHCR on version tags (linux/amd64; linux/arm64
   optional).
+- Rally uses the shared Con Services packages `denlink`, `groupmatch` and
+  `authbase` (generated copies from `con-services` `shared/go`, checked by
+  CI's *Shared code drift* job).
+- `GET /api/role-catalog` follows the 1.0 role catalog contract: it needs
+  HR's service token (`HR_SERVICE_TOKEN`, new, a secret) or a staff
+  sign-in, lists each role once with `group_display`, `privileged`,
+  `dynamic` and `default`, and has a `revision` that is also its `ETag`
+  (`If-None-Match` gives `304`). HR can read it only once it sends the
+  token. A role can override its `privileged` flag in `access-config.toml`.
+- `GET /api/den/state` and the Den connection status report `revoked` when
+  Den rejected Rally's credential; admins then see *Den rejected this
+  module's credential: pair again* and can paste a new pairing URL. The
+  migration `20261111000001_den_link_revoked` adds `den_link.revoked_at`.
+- Staff group matching follows the shared rule and can be set with
+  `OIDC_GROUPS_CLAIM` (default `groups`), `OIDC_GROUP_MATCH` (`full` or
+  `last`) and `OIDC_GROUP_PREFIX` (for example `/con2026`).
+- `ATTENDEE_OIDC_AUDIENCE` (default `events-public-api`): the audience the
+  submission site's access tokens must carry. It must differ from
+  `OIDC_AUDIENCE`.
+- Rate limits on everything under `/api/public/v1` (`PUBLIC_RATE_LIMIT`,
+  default `120/m` per client IP, burst `PUBLIC_RATE_BURST` `30`) and on
+  creating and submitting submissions, inviting co-presenters, invite codes
+  and starting uploads (`SUBMISSION_RATE_LIMIT`, default `20/m` per person,
+  burst `SUBMISSION_RATE_BURST` `10`). Over the limit the API answers
+  `429 rate_limited` with `Retry-After`. `off` switches a limiter off.
+- Kubernetes: the chart lists `DEN_LINK_ENCRYPTION_KEY` (required) and
+  `HR_SERVICE_TOKEN` (optional) as keys of `rally-secrets`, sets
+  `OIDC_AUDIENCE: events-api` and `ATTENDEE_OIDC_AUDIENCE: events-public-api`,
+  mounts each web app's security headers, and has the new value
+  `frontend.cspConnectSrc` for extra origins in the Content Security Policy.
+- The web app images read `KEYCLOAK_ORIGIN` and `S3_ORIGIN` at start-up and
+  put them into their Content Security Policy.
+
+### Changed
+
+- `AUTH_MODE` now defaults to `oidc` and `APP_ENV` to `production`.
+  `AUTH_MODE=dev` stops the backend unless `APP_ENV=development`; the
+  development Compose file and `.env.example` set `APP_ENV=development`.
+- The web apps send the **access token** instead of the ID token, and the
+  backend checks its audience: `OIDC_AUDIENCE` now defaults to `events-api`
+  (was the client id). Keycloak must add `events-api` to `events-spa`'s and
+  `events-public-api` to `rally-submit`'s access tokens with an audience
+  mapper; see [Set up Rally](https://aglelectronics.github.io/con-services/modules/rally/setup/#2-prepare-keycloak).
+  Without it every API call answers `401 invalid token`.
+- The web apps keep tokens in memory only and sign in again silently after
+  a reload; tabs follow the Keycloak session instead of each other.
+- The `roles` claim no longer grants staff roles: only the claim named by
+  `OIDC_GROUPS_CLAIM` counts. Put people into groups, not realm roles.
+- JSON request bodies are limited to 1 MiB (`413 request_too_large`), and
+  error messages for broken JSON are clearer (`unknown field "…"`).
+  `accept` and `reject` now refuse a broken body instead of ignoring it.
+- The role catalog's `scope` is `organization` instead of
+  `organization:<slug>`, and its `note` says *Rally* instead of *Events*.
+- `DEN_LINK_ENCRYPTION_KEY` is required outside `APP_ENV=development`
+  (a secret, 32 random bytes in base64); `DEN_ALLOWED_HOSTS` limits pasted
+  pairing URLs when `DEN_INTERNAL_URL` is empty.
 
 ### Security
 
+- The Den credential is stored encrypted with `DEN_LINK_ENCRYPTION_KEY`
+  (AES-256-GCM); a credential stored before is encrypted on its next read.
+  Rotation: `DEN_LINK_ENCRYPTION_KEY_PREVIOUS`.
+- Staff and attendee realms are kept apart more strictly: issuers are
+  compared without regard to case, default port or trailing slash, the
+  backend refuses to start when both realms' discovery documents name the
+  same issuer, and a token from the other realm is refused with `401`
+  before any other check. ID tokens are refused on every API.
+- API responses carry `X-Content-Type-Options`, `X-Frame-Options`,
+  `Referrer-Policy` and a `Content-Security-Policy`; the web apps' nginx
+  adds the shared Con Services headers (CSP limited to the app, the sign-in
+  server and the upload bucket). The inline theme and silent-sign-in
+  scripts moved to files so scripts can be limited to the app's origin.
+- The `X-Dev-User` and `X-Dev-Groups` headers are allowed through CORS only
+  in dev mode and deleted from every request otherwise.
 - The backend reads the client address from `X-Forwarded-For` only when
   the connection comes from a trusted proxy (`TRUSTED_PROXY_CIDRS`), and
   ignores `X-Real-IP` and `True-Client-IP`.
