@@ -34,15 +34,15 @@ func AttendeeMiddleware(cfg *config.Config, resolver *Resolver, verifier *OIDCVe
 				user *User
 				err  error
 			)
-			switch cfg.AuthMode {
-			case config.AuthModeDev:
+			switch {
+			case cfg.DevAuth():
 				header := strings.TrimSpace(r.Header.Get("X-Dev-User"))
 				if header == "" {
 					header = "dev-attendee"
 				}
 				user, err = resolver.loadOrProvisionAttendee(ctx, DevAttendeeIssuer, header,
 					displayFromDevHeader(header), header+"@attendee.local", true)
-			case config.AuthModeOIDC:
+			case cfg.AuthMode == config.AuthModeOIDC:
 				if verifier == nil {
 					httperror.Render(w, r, httperror.New(httperror.CodeServiceUnavailable, "attendee sign-in is not configured"))
 					return

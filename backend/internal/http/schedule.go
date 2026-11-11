@@ -66,7 +66,7 @@ func (h *scheduleHandler) createRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in events.RoomInput
-	if err := decodeJSON(r, &in); err != nil {
+	if err := decodeJSON(w, r, &in); err != nil {
 		httperror.Render(w, r, err)
 		return
 	}
@@ -81,7 +81,7 @@ func (h *scheduleHandler) updateRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in events.RoomInput
-	if err := decodeJSON(r, &in); err != nil {
+	if err := decodeJSON(w, r, &in); err != nil {
 		httperror.Render(w, r, err)
 		return
 	}
@@ -109,7 +109,7 @@ func (h *scheduleHandler) updateDates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in events.EditionDatesInput
-	if err := decodeJSON(r, &in); err != nil {
+	if err := decodeJSON(w, r, &in); err != nil {
 		httperror.Render(w, r, err)
 		return
 	}
@@ -134,7 +134,7 @@ func (h *scheduleHandler) updateSettings(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var in events.ScheduleSettings
-	if err := decodeJSON(r, &in); err != nil {
+	if err := decodeJSON(w, r, &in); err != nil {
 		httperror.Render(w, r, err)
 		return
 	}
@@ -149,7 +149,7 @@ func (h *scheduleHandler) createItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in events.ItemInput
-	if err := decodeJSON(r, &in); err != nil {
+	if err := decodeJSON(w, r, &in); err != nil {
 		httperror.Render(w, r, err)
 		return
 	}
@@ -164,7 +164,7 @@ func (h *scheduleHandler) updateItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in events.ItemInput
-	if err := decodeJSON(r, &in); err != nil {
+	if err := decodeJSON(w, r, &in); err != nil {
 		httperror.Render(w, r, err)
 		return
 	}
@@ -193,7 +193,7 @@ func (h *scheduleHandler) publish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in publishInput
-	if err := decodeJSON(r, &in); err != nil {
+	if err := decodeJSON(w, r, &in); err != nil {
 		httperror.Render(w, r, err)
 		return
 	}
@@ -261,7 +261,7 @@ func (h *scheduleHandler) live(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in events.LiveInput
-	if err := decodeJSON(r, &in); err != nil {
+	if err := decodeJSON(w, r, &in); err != nil {
 		httperror.Render(w, r, err)
 		return
 	}
@@ -290,7 +290,7 @@ func (h *scheduleHandler) createAnnouncement(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	var in announcementInput
-	if err := decodeJSON(r, &in); err != nil {
+	if err := decodeJSON(w, r, &in); err != nil {
 		httperror.Render(w, r, err)
 		return
 	}
@@ -305,7 +305,7 @@ func (h *scheduleHandler) updateAnnouncement(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	var in announcementInput
-	if err := decodeJSON(r, &in); err != nil {
+	if err := decodeJSON(w, r, &in); err != nil {
 		httperror.Render(w, r, err)
 		return
 	}
@@ -350,7 +350,7 @@ func (h *scheduleHandler) createChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in events.TelegramChatInput
-	if err := decodeJSON(r, &in); err != nil {
+	if err := decodeJSON(w, r, &in); err != nil {
 		httperror.Render(w, r, err)
 		return
 	}
@@ -365,7 +365,7 @@ func (h *scheduleHandler) updateChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in events.TelegramChatInput
-	if err := decodeJSON(r, &in); err != nil {
+	if err := decodeJSON(w, r, &in); err != nil {
 		httperror.Render(w, r, err)
 		return
 	}

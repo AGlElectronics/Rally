@@ -48,7 +48,7 @@ func (h *submissionHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in events.SubmissionInput
-	if err := decodeJSON(r, &in); err != nil {
+	if err := decodeJSON(w, r, &in); err != nil {
 		httperror.Render(w, r, err)
 		return
 	}
@@ -77,7 +77,7 @@ func (h *submissionHandler) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var p events.SubmissionPatch
-	if err := decodeJSON(r, &p); err != nil {
+	if err := decodeJSON(w, r, &p); err != nil {
 		httperror.Render(w, r, err)
 		return
 	}
@@ -128,7 +128,10 @@ func (h *submissionHandler) accept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in decisionInput
-	_ = decodeJSON(r, &in)
+	if err := decodeOptionalJSON(w, r, &in); err != nil {
+		httperror.Render(w, r, err)
+		return
+	}
 	s, err := h.svc.Accept(r.Context(), id, in.Note)
 	if err != nil {
 		httperror.Render(w, r, err)
@@ -160,7 +163,7 @@ func (h *submissionHandler) addNote(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Body string `json:"body"`
 	}
-	if err := decodeJSON(r, &in); err != nil {
+	if err := decodeJSON(w, r, &in); err != nil {
 		httperror.Render(w, r, err)
 		return
 	}
@@ -193,7 +196,7 @@ func (h *submissionHandler) setScore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in events.ScoreInput
-	if err := decodeJSON(r, &in); err != nil {
+	if err := decodeJSON(w, r, &in); err != nil {
 		httperror.Render(w, r, err)
 		return
 	}
@@ -212,7 +215,10 @@ func (h *submissionHandler) reject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in decisionInput
-	_ = decodeJSON(r, &in)
+	if err := decodeOptionalJSON(w, r, &in); err != nil {
+		httperror.Render(w, r, err)
+		return
+	}
 	s, err := h.svc.Reject(r.Context(), id, in.Note)
 	if err != nil {
 		httperror.Render(w, r, err)

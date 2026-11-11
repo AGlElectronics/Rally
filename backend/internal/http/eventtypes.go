@@ -33,7 +33,7 @@ func (h *eventTypeHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in events.EventTypeInput
-	if err := decodeJSON(r, &in); err != nil {
+	if err := decodeJSON(w, r, &in); err != nil {
 		httperror.Render(w, r, err)
 		return
 	}
@@ -52,7 +52,7 @@ func (h *eventTypeHandler) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in events.EventTypeInput
-	if err := decodeJSON(r, &in); err != nil {
+	if err := decodeJSON(w, r, &in); err != nil {
 		httperror.Render(w, r, err)
 		return
 	}

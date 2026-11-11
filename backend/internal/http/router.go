@@ -64,6 +64,7 @@ import (
 	"github.com/rs/zerolog/hlog"
 
 	"github.com/AGlElectronics/rally/backend/internal/auth"
+	"github.com/AGlElectronics/rally/backend/internal/authbase"
 	"github.com/AGlElectronics/rally/backend/internal/brand"
 	"github.com/AGlElectronics/rally/backend/internal/clientip"
 	"github.com/AGlElectronics/rally/backend/internal/config"
@@ -99,7 +100,10 @@ type Deps struct {
 // Version is passed in from cmd/server at build time.
 func NewRouter(deps Deps, version string) http.Handler {
 	r := chi.NewRouter()
+	authCfg := deps.Config.Auth()
 
+	r.Use(authbase.SecurityHeaders)
+	r.Use(authCfg.StripDevHeaders)
 	r.Use(chimiddleware.RequestID)
 	r.Use(clientip.Middleware(deps.Config.TrustedProxyCIDRs))
 	r.Use(chimiddleware.Recoverer)
@@ -120,7 +124,8 @@ func NewRouter(deps Deps, version string) http.Handler {
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   deps.Config.CORSAllowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Dev-User", "X-Request-ID"},
+		// X-Dev-User and X-Dev-Groups only in dev mode.
+		AllowedHeaders:   authCfg.AllowedHeaders(),
 		ExposedHeaders:   []string{"X-Request-ID"},
 		AllowCredentials: true,
 		MaxAge:           300,
@@ -168,6 +173,11 @@ func NewRouter(deps Deps, version string) http.Handler {
 	}
 	apiKeys := &apiKeyHandler{keys: keySvc}
 
+	// Per replica, in memory: the public site per client IP, the endpoints
+	// that create things per person (else per IP).
+	publicLimit := rateLimiter(deps.Config.PublicRateLimit, authbase.ClientIP)
+	submitLimit := rateLimiter(deps.Config.SubmissionRateLimit, authbase.BySubject(userKey))
+
 	// Orchestrator probes — unauthenticated, served from the root so they
 	// don't collide with any /api/* middleware.
 	r.Get("/livez", health.livez)
@@ -182,6 +192,7 @@ func NewRouter(deps Deps, version string) http.Handler {
 		// Public submission site. Only attendee-realm tokens work here, and
 		// attendees never carry staff permissions.
 		api.Route("/public/v1", func(pub chi.Router) {
+			pub.Use(publicLimit)
 			pub.Get("/brand", brandH.get)
 			pub.Get("/brand/{role}", den.AssetHandler)
 			pub.Get("/calls", public.calls)
@@ -200,19 +211,20 @@ func NewRouter(deps Deps, version string) http.Handler {
 				a.Use(attendeeMW)
 				a.Get("/me", public.me)
 				a.Get("/submissions", public.mine)
-				a.Post("/calls/{cfp}/submissions", subs.create)
+				a.With(submitLimit).Post("/calls/{cfp}/submissions", subs.create)
 				a.Get("/submissions/{submission}", subs.get)
 				a.Patch("/submissions/{submission}", subs.update)
-				a.Post("/submissions/{submission}/submit", subs.submit)
+				a.With(submitLimit).Post("/submissions/{submission}/submit", subs.submit)
 				a.Post("/submissions/{submission}/withdraw", subs.withdraw)
 				a.Post("/submissions/{submission}/leave", public.leave)
-				a.Post("/submissions/{submission}/people", public.addPerson)
+				a.With(submitLimit).Post("/submissions/{submission}/people", public.addPerson)
 				a.Delete("/submissions/{submission}/people/{person}", public.removePerson)
-				a.Post("/submissions/{submission}/people/{person}/reissue", public.reissueInvite)
-				a.Get("/invites/{code}", public.invite)
-				a.Post("/invites/{code}/accept", public.acceptInvite)
-				a.Post("/invites/{code}/decline", public.declineInvite)
-				a.Post("/uploads", filesH.start)
+				a.With(submitLimit).Post("/submissions/{submission}/people/{person}/reissue", public.reissueInvite)
+				// Invite codes are short: guessing them is what this limit stops.
+				a.With(submitLimit).Get("/invites/{code}", public.invite)
+				a.With(submitLimit).Post("/invites/{code}/accept", public.acceptInvite)
+				a.With(submitLimit).Post("/invites/{code}/decline", public.declineInvite)
+				a.With(submitLimit).Post("/uploads", filesH.start)
 				a.Post("/uploads/{file}/complete", filesH.complete)
 				a.Get("/files/{file}/download", filesH.download)
 			})
@@ -293,7 +305,7 @@ func NewRouter(deps Deps, version string) http.Handler {
 				secure.Get("/cfps/{cfp}", cfps.get)
 				secure.Put("/cfps/{cfp}", cfps.update)
 				secure.Delete("/cfps/{cfp}", cfps.delete)
-				secure.Post("/cfps/{cfp}/submissions", subs.create)
+				secure.With(submitLimit).Post("/cfps/{cfp}/submissions", subs.create)
 
 				secure.Get("/submissions/{submission}", subs.get)
 				secure.Patch("/submissions/{submission}", subs.update)
@@ -314,4 +326,21 @@ func NewRouter(deps Deps, version string) http.Handler {
 	})
 
 	return r
+}
+
+// rateLimiter is an authbase limiter for l, or a pass-through when l is off.
+func rateLimiter(l config.RateLimit, key authbase.KeyFunc) func(http.Handler) http.Handler {
+	if l.Rate <= 0 {
+		return func(next http.Handler) http.Handler { return next }
+	}
+	return authbase.NewRateLimiter(authbase.RateLimitOptions{Rate: l.Rate, Burst: l.Burst, Key: key}).Middleware
+}
+
+// userKey is the signed-in person (staff or attendee) of a request.
+func userKey(r *http.Request) (authbase.UserKey, bool) {
+	u, ok := auth.FromContext(r.Context())
+	if !ok {
+		return authbase.UserKey{}, false
+	}
+	return authbase.UserKey{Issuer: u.Issuer, Subject: u.Subject}, true
 }

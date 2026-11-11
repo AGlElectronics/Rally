@@ -80,7 +80,7 @@ func (h *publicHandler) addPerson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in events.AddPersonInput
-	if err := decodeJSON(r, &in); err != nil {
+	if err := decodeJSON(w, r, &in); err != nil {
 		httperror.Render(w, r, err)
 		return
 	}
@@ -160,7 +160,7 @@ type fileHandler struct {
 
 func (h *fileHandler) start(w http.ResponseWriter, r *http.Request) {
 	var in events.UploadInput
-	if err := decodeJSON(r, &in); err != nil {
+	if err := decodeJSON(w, r, &in); err != nil {
 		httperror.Render(w, r, err)
 		return
 	}

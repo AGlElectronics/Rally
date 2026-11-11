@@ -28,6 +28,10 @@ const (
 	CodeInternal     Code = "internal"
 	// CodeServiceUnavailable: a feature isn't configured on this deployment.
 	CodeServiceUnavailable Code = "service_unavailable"
+	// CodeRequestTooLarge: the request body is over the limit (413).
+	CodeRequestTooLarge Code = "request_too_large"
+	// CodeUnsupportedMediaType: the body is not JSON (415).
+	CodeUnsupportedMediaType Code = "unsupported_media_type"
 )
 
 // Error is the canonical service error. Services return *Error or wrap one
@@ -145,6 +149,10 @@ func statusFor(code Code) int {
 		return http.StatusConflict
 	case CodeServiceUnavailable:
 		return http.StatusServiceUnavailable
+	case CodeRequestTooLarge:
+		return http.StatusRequestEntityTooLarge
+	case CodeUnsupportedMediaType:
+		return http.StatusUnsupportedMediaType
 	default:
 		return http.StatusInternalServerError
 	}

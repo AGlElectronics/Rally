@@ -39,7 +39,7 @@ func (h *cfpHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in events.CfPInput
-	if err := decodeJSON(r, &in); err != nil {
+	if err := decodeJSON(w, r, &in); err != nil {
 		httperror.Render(w, r, err)
 		return
 	}
@@ -72,7 +72,7 @@ func (h *cfpHandler) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in events.CfPInput
-	if err := decodeJSON(r, &in); err != nil {
+	if err := decodeJSON(w, r, &in); err != nil {
 		httperror.Render(w, r, err)
 		return
 	}

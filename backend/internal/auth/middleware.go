@@ -13,7 +13,8 @@ import (
 // Middleware authenticates each request based on cfg.AuthMode:
 //
 //   - AuthModeDev reads X-Dev-User (or DEV_DEFAULT_USER) and provisions a
-//     local user under the reserved "dev" issuer. Not for production.
+//     local user under the reserved "dev" issuer. Honoured only with
+//     APP_ENV=development; otherwise every request is refused.
 //   - AuthModeOIDC verifies the Authorization: Bearer <JWT>, then
 //     provisions/refreshes the user from (issuer, subject).
 //
@@ -24,8 +25,8 @@ func Middleware(cfg *config.Config, resolver *Resolver, oidcVerifier *OIDCVerifi
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 
-			switch cfg.AuthMode {
-			case config.AuthModeDev:
+			switch {
+			case cfg.DevAuth():
 				header := r.Header.Get("X-Dev-User")
 				if header == "" {
 					header = cfg.DevDefaultUser
@@ -38,7 +39,7 @@ func Middleware(cfg *config.Config, resolver *Resolver, oidcVerifier *OIDCVerifi
 				}
 				ctx = WithUser(ctx, user)
 
-			case config.AuthModeOIDC:
+			case cfg.AuthMode == config.AuthModeOIDC:
 				if oidcVerifier == nil {
 					httperror.Render(w, r, httperror.Internal(nil))
 					return

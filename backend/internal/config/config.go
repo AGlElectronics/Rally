@@ -15,21 +15,37 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"github.com/AGlElectronics/rally/backend/internal/authbase"
 	"github.com/AGlElectronics/rally/backend/internal/clientip"
 	"github.com/AGlElectronics/rally/backend/internal/denlink"
 )
 
-// AuthMode selects how incoming requests are authenticated.
+// AuthMode selects how incoming requests are authenticated (AUTH_MODE,
+// read and guarded by the shared authbase package).
 //
 //   - AuthModeDev reads an X-Dev-User header and provisions a local user
-//     tied to the "dev" issuer. Only safe for local scaffolding and CI.
-//   - AuthModeOIDC verifies a Bearer JWT via the configured issuer.
-type AuthMode string
+//     tied to the "dev" issuer. Only allowed with APP_ENV=development.
+//   - AuthModeOIDC (the default) verifies a Bearer JWT via the configured issuer.
+type AuthMode = authbase.AuthMode
 
 const (
-	AuthModeOIDC AuthMode = "oidc"
-	AuthModeDev  AuthMode = "dev"
+	AuthModeOIDC = authbase.AuthOIDC
+	AuthModeDev  = authbase.AuthDev
 )
+
+// Default rate limits (authbase.ParseRate syntax) and bursts.
+const (
+	DefaultPublicRateLimit     = "120/m"
+	DefaultPublicRateBurst     = 30
+	DefaultSubmissionRateLimit = "20/m"
+	DefaultSubmissionRateBurst = 10
+)
+
+// RateLimit is one limiter's setting. A zero Rate means off.
+type RateLimit struct {
+	Rate  float64 // requests per second
+	Burst int
+}
 
 // DenSlug is the slug Rally pairs with Den under (Den's built-in name for it).
 const DenSlug = "events"
@@ -95,7 +111,23 @@ type Config struct {
 	// believed when working out the client IP (TRUSTED_PROXY_CIDRS).
 	TrustedProxyCIDRs []netip.Prefix
 	ShutdownTimeout   time.Duration
+
+	// PublicRateLimit applies per client IP to everything under
+	// /api/public/v1 (PUBLIC_RATE_LIMIT, PUBLIC_RATE_BURST).
+	PublicRateLimit RateLimit
+	// SubmissionRateLimit applies per person (else per client IP) to the
+	// endpoints that create submissions, invitations and uploads
+	// (SUBMISSION_RATE_LIMIT, SUBMISSION_RATE_BURST).
+	SubmissionRateLimit RateLimit
 }
+
+// Auth is the shared authentication guard for this configuration.
+func (c *Config) Auth() authbase.Config {
+	return authbase.Config{AppEnv: c.AppEnv, AuthMode: c.AuthMode}
+}
+
+// DevAuth reports AUTH_MODE=dev in a valid (APP_ENV=development) setup.
+func (c *Config) DevAuth() bool { return c.Auth().DevAuth() }
 
 // Load reads environment variables (plus an optional .env file) and returns
 // a validated Config. Required fields that are missing return an aggregated
@@ -104,8 +136,12 @@ type Config struct {
 func Load() (*Config, error) {
 	_ = godotenv.Load()
 
+	// AUTH_MODE (default oidc) and APP_ENV (default production); the guard
+	// itself runs in validate so every problem is reported at once.
+	auth, _ := authbase.FromEnv(os.Getenv)
+
 	cfg := &Config{
-		AppEnv: getEnv("APP_ENV", "development"),
+		AppEnv: auth.AppEnv,
 		// Container-internal defaults: every module in the ecosystem binds
 		// :8080 inside its container. Host-side port mapping (host 8100 ->
 		// container 8080 for Rally) is handled by docker-compose / K8s.
@@ -122,7 +158,7 @@ func Load() (*Config, error) {
 		S3UsePathStyle:    getEnvBool("S3_USE_PATH_STYLE", true),
 		S3Enabled:         getEnvBool("S3_ENABLED", true),
 
-		AuthMode:         AuthMode(getEnv("AUTH_MODE", "dev")),
+		AuthMode:         auth.AuthMode,
 		OIDCIssuerURL:    getEnv("OIDC_ISSUER_URL", ""),
 		OIDCClientID:     getEnv("OIDC_CLIENT_ID", ""),
 		OIDCAudience:     getEnv("OIDC_AUDIENCE", ""),
@@ -148,6 +184,13 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid config: TRUSTED_PROXY_CIDRS: %w", err)
 	}
 	cfg.TrustedProxyCIDRs = trusted
+
+	if cfg.PublicRateLimit, err = rateLimit("PUBLIC_RATE_LIMIT", DefaultPublicRateLimit, "PUBLIC_RATE_BURST", DefaultPublicRateBurst); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+	if cfg.SubmissionRateLimit, err = rateLimit("SUBMISSION_RATE_LIMIT", DefaultSubmissionRateLimit, "SUBMISSION_RATE_BURST", DefaultSubmissionRateBurst); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
 
 	// Den's settings are validated together with the rest below, against the
 	// same APP_ENV as everything else.
@@ -185,6 +228,10 @@ func (c *Config) validate() error {
 		}
 	}
 
+	if err := c.Auth().Validate(); err != nil {
+		errs = append(errs, err.Error())
+	}
+
 	switch c.AuthMode {
 	case AuthModeOIDC:
 		if c.OIDCIssuerURL == "" {
@@ -201,8 +248,6 @@ func (c *Config) validate() error {
 		}
 	case AuthModeDev:
 		// dev mode: no extra required fields; dev users auto-provision.
-	default:
-		errs = append(errs, fmt.Sprintf("AUTH_MODE must be 'oidc' or 'dev', got %q", c.AuthMode))
 	}
 
 	if len(errs) > 0 {
@@ -216,6 +261,25 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// rateLimit reads a rate ("60/m", or "off") and its burst.
+func rateLimit(rateKey, rateDefault, burstKey string, burstDefault int) (RateLimit, error) {
+	raw := getEnv(rateKey, rateDefault)
+	if strings.EqualFold(strings.TrimSpace(raw), "off") {
+		return RateLimit{}, nil
+	}
+	rate, err := authbase.ParseRate(raw)
+	if err != nil {
+		return RateLimit{}, fmt.Errorf("%s: %w (or off)", rateKey, err)
+	}
+	burst := burstDefault
+	if v := getEnv(burstKey, ""); v != "" {
+		if burst, err = strconv.Atoi(strings.TrimSpace(v)); err != nil || burst < 1 {
+			return RateLimit{}, fmt.Errorf("%s must be a whole number of at least 1, got %q", burstKey, v)
+		}
+	}
+	return RateLimit{Rate: rate, Burst: burst}, nil
 }
 
 func getEnvBool(key string, fallback bool) bool {
