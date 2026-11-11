@@ -119,9 +119,15 @@ func Run(ctx context.Context, logger zerolog.Logger) error {
 	}
 
 	brandProvider := brand.New(cfg)
-	den := denlink.New(pool, denlink.Config{Slug: "events", Version: Version, InternalURL: cfg.DenInternalURL, Mode: cfg.DenMode}, logger)
+	denCfg := cfg.Den
+	denCfg.Version = Version
+	den, err := denlink.Open(pool, denCfg, logger)
+	if err != nil {
+		return fmt.Errorf("den link: %w", err)
+	}
 	if err := den.Restore(ctx); err != nil {
-		logger.Warn().Err(err).Msg("den link: load failed")
+		// Keep serving: an admin can pair again from the web app.
+		logger.Error().Err(err).Msg("den link: load failed")
 	}
 	go den.Run(ctx)
 

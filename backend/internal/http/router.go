@@ -132,7 +132,9 @@ func NewRouter(deps Deps, version string) http.Handler {
 
 	den := deps.Den
 	if den == nil {
-		den = denlink.New(deps.Pool, denlink.Config{Slug: "events", Version: version, Mode: deps.Config.DenMode}, deps.Logger)
+		denCfg := deps.Config.Den
+		denCfg.Slug, denCfg.Version = config.DenSlug, version
+		den = denlink.New(deps.Pool, denCfg, deps.Logger)
 	}
 	brandH := &brandHandler{provider: deps.Brand, den: den}
 	orgs := &organizationHandler{svc: events.NewOrganizationService(deps.Pool)}

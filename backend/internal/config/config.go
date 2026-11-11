@@ -31,6 +31,9 @@ const (
 	AuthModeDev  AuthMode = "dev"
 )
 
+// DenSlug is the slug Rally pairs with Den under (Den's built-in name for it).
+const DenSlug = "events"
+
 // Config is the validated process configuration. Fields are grouped by
 // concern so new flags can be added next to related ones.
 type Config struct {
@@ -66,11 +69,10 @@ type Config struct {
 
 	// Brand provider
 	BrandLocalPath string // optional brand.json; Den's brand overlays it once paired
-	// DenInternalURL replaces the host of pasted Den pairing URLs (Docker).
-	DenInternalURL string
-	// DenMode is DEN_MODE: required keeps the API locked until the module
-	// is paired with Den; standalone (the default) does not.
-	DenMode denlink.Mode
+	// Den is the pairing configuration (DEN_MODE, DEN_INTERNAL_URL,
+	// DEN_ALLOWED_HOSTS, DEN_LINK_ENCRYPTION_KEY[_PREVIOUS], APP_ENV).
+	// Version is filled in by the app at start-up.
+	Den denlink.Config
 
 	// Public schedule API. Den's "events_public_schedule" setting wins when
 	// paired and set; this is the standalone default.
@@ -131,8 +133,6 @@ func Load() (*Config, error) {
 		AttendeeOIDCClientID:  getEnv("ATTENDEE_OIDC_CLIENT_ID", ""),
 
 		BrandLocalPath: getEnv("BRAND_LOCAL_PATH", ""),
-		DenInternalURL: getEnv("DEN_INTERNAL_URL", ""),
-		DenMode:        denlink.Mode(getEnv("DEN_MODE", string(denlink.ModeStandalone))),
 
 		PublicScheduleEnabled: getEnvBool("PUBLIC_SCHEDULE_ENABLED", false),
 		PublicAPIBuiltinKey:   getEnv("PUBLIC_API_BUILTIN_KEY", ""),
@@ -149,6 +149,11 @@ func Load() (*Config, error) {
 	}
 	cfg.TrustedProxyCIDRs = trusted
 
+	// Den's settings are validated together with the rest below, against the
+	// same APP_ENV as everything else.
+	cfg.Den, _ = denlink.FromEnv(DenSlug, "", os.Getenv)
+	cfg.Den.AppEnv = cfg.AppEnv
+
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
@@ -161,7 +166,7 @@ func (c *Config) validate() error {
 	if c.DatabaseURL == "" {
 		errs = append(errs, "DATABASE_URL is required")
 	}
-	if err := c.DenMode.Validate(); err != nil {
+	if err := c.Den.Validate(); err != nil {
 		errs = append(errs, err.Error())
 	}
 
