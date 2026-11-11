@@ -83,7 +83,7 @@ func Run(ctx context.Context, logger zerolog.Logger) error {
 		if err != nil {
 			return fmt.Errorf("init oidc verifier: %w", err)
 		}
-		logger.Info().Str("issuer", cfg.OIDCIssuerURL).Msg("oidc verifier ready")
+		logger.Info().Str("issuer", oidcVerifier.Issuer()).Str("audience", cfg.OIDCAudience).Msg("oidc verifier ready")
 	}
 
 	// Attendee realm for the public submission site. Optional: without it
@@ -91,12 +91,12 @@ func Run(ctx context.Context, logger zerolog.Logger) error {
 	var attendeeVerifier *auth.OIDCVerifier
 	if cfg.AuthMode == config.AuthModeOIDC && cfg.AttendeeOIDCIssuerURL != "" {
 		attCtx, cancelAtt := context.WithTimeout(ctx, 30*time.Second)
-		attendeeVerifier, err = auth.NewOIDCVerifierFor(attCtx, cfg.AttendeeOIDCIssuerURL, cfg.AttendeeOIDCClientID)
+		attendeeVerifier, err = auth.NewOIDCVerifierFor(attCtx, cfg.AttendeeOIDCIssuerURL, cfg.AttendeeOIDCAudience)
 		cancelAtt()
 		if err != nil {
 			return fmt.Errorf("init attendee oidc verifier: %w", err)
 		}
-		logger.Info().Str("issuer", cfg.AttendeeOIDCIssuerURL).Msg("attendee oidc verifier ready")
+		logger.Info().Str("issuer", attendeeVerifier.Issuer()).Str("audience", cfg.AttendeeOIDCAudience).Msg("attendee oidc verifier ready")
 	} else if cfg.AuthMode == config.AuthModeOIDC {
 		logger.Warn().Msg("ATTENDEE_OIDC_ISSUER_URL not set — public submission sign-in is disabled")
 	}

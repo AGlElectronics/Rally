@@ -16,21 +16,17 @@ import { CfPDetailPage, type CfPTab } from '@/pages/CfPDetailPage';
 import { EventTypesPage } from '@/pages/EventTypesPage';
 import { SchedulePage, type ScheduleTab } from '@/pages/SchedulePage';
 import { SubmissionReviewPage } from '@/pages/SubmissionReviewPage';
-import { getUserManager, isOidcAuthMode } from '@/auth/oidc';
+import { currentUser, isOidcAuthMode } from '@/auth/oidc';
 
-// In OIDC mode a route behind the Layout checks there is a cached user
+// In OIDC mode a route behind the Layout checks there is a signed-in user
+// (signing in silently after a reload, since tokens live only in memory)
 // before letting the component mount. If not, we redirect to /login and
 // carry the attempted path so the post-login redirect lands there.
 async function requireAuth(fullPath: string) {
   if (!isOidcAuthMode()) {
     return; // dev mode: nothing to check
   }
-  const mgr = getUserManager();
-  if (!mgr) {
-    throw redirect({ to: '/login', search: { redirect: fullPath } });
-  }
-  const user = await mgr.getUser();
-  if (!user || user.expired) {
+  if (!(await currentUser())) {
     throw redirect({ to: '/login', search: { redirect: fullPath } });
   }
 }

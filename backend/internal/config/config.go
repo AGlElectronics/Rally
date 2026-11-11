@@ -55,6 +55,14 @@ const DenSlug = "events"
 // MinServiceTokenLength is the shortest HR_SERVICE_TOKEN accepted.
 const MinServiceTokenLength = 32
 
+// Default audiences of the access tokens Rally accepts (token contract):
+// the staff app's tokens name the staff API, the submission site's tokens
+// the public API. Keycloak adds them with an audience mapper on each client.
+const (
+	DefaultOIDCAudience         = "events-api"
+	DefaultAttendeeOIDCAudience = "events-public-api"
+)
+
 // Config is the validated process configuration. Fields are grouped by
 // concern so new flags can be added next to related ones.
 type Config struct {
@@ -91,6 +99,9 @@ type Config struct {
 	// staff. Empty issuer in oidc mode = public sign-in is unavailable.
 	AttendeeOIDCIssuerURL string
 	AttendeeOIDCClientID  string
+	// AttendeeOIDCAudience is the audience attendee access tokens must name
+	// (ATTENDEE_OIDC_AUDIENCE).
+	AttendeeOIDCAudience string
 
 	// Brand provider
 	BrandLocalPath string // optional brand.json; Den's brand overlays it once paired
@@ -174,12 +185,13 @@ func Load() (*Config, error) {
 		AuthMode:         auth.AuthMode,
 		OIDCIssuerURL:    getEnv("OIDC_ISSUER_URL", ""),
 		OIDCClientID:     getEnv("OIDC_CLIENT_ID", ""),
-		OIDCAudience:     getEnv("OIDC_AUDIENCE", ""),
+		OIDCAudience:     getEnv("OIDC_AUDIENCE", DefaultOIDCAudience),
 		AccessConfigPath: getEnv("ACCESS_CONFIG_PATH", ""),
 		DevDefaultUser:   getEnv("DEV_DEFAULT_USER", "dev-admin"),
 
 		AttendeeOIDCIssuerURL: getEnv("ATTENDEE_OIDC_ISSUER_URL", ""),
 		AttendeeOIDCClientID:  getEnv("ATTENDEE_OIDC_CLIENT_ID", ""),
+		AttendeeOIDCAudience:  getEnv("ATTENDEE_OIDC_AUDIENCE", DefaultAttendeeOIDCAudience),
 
 		BrandLocalPath: getEnv("BRAND_LOCAL_PATH", ""),
 
@@ -266,6 +278,9 @@ func (c *Config) validate() error {
 		}
 		if c.AttendeeOIDCIssuerURL != "" && NormalizeIssuer(c.AttendeeOIDCIssuerURL) == NormalizeIssuer(c.OIDCIssuerURL) {
 			errs = append(errs, "ATTENDEE_OIDC_ISSUER_URL must be a different realm than OIDC_ISSUER_URL (staff)")
+		}
+		if c.AttendeeOIDCIssuerURL != "" && c.AttendeeOIDCAudience == c.OIDCAudience {
+			errs = append(errs, "ATTENDEE_OIDC_AUDIENCE must differ from OIDC_AUDIENCE: a token for one API must not be accepted by the other")
 		}
 	case AuthModeDev:
 		// dev mode: no extra required fields; dev users auto-provision.

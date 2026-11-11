@@ -26,6 +26,9 @@ func baseEnv(t *testing.T) {
 		"OIDC_GROUP_MATCH":         "",
 		"OIDC_GROUP_PREFIX":        "",
 		"HR_SERVICE_TOKEN":         "",
+		"OIDC_AUDIENCE":            "",
+		"ATTENDEE_OIDC_AUDIENCE":   "",
+		"ATTENDEE_OIDC_CLIENT_ID":  "",
 	} {
 		t.Setenv(k, v)
 	}
@@ -48,6 +51,20 @@ func TestLoadDefaultsToOIDCAndProduction(t *testing.T) {
 	}
 	if cfg.SubmissionRateLimit.Burst != DefaultSubmissionRateBurst {
 		t.Fatalf("SubmissionRateLimit = %+v", cfg.SubmissionRateLimit)
+	}
+	if cfg.OIDCAudience != "events-api" || cfg.AttendeeOIDCAudience != "events-public-api" {
+		t.Fatalf("audiences = %q, %q", cfg.OIDCAudience, cfg.AttendeeOIDCAudience)
+	}
+}
+
+func TestLoadRejectsSharedAudience(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("ATTENDEE_OIDC_ISSUER_URL", "https://auth.example.org/realms/attendees")
+	t.Setenv("ATTENDEE_OIDC_CLIENT_ID", "rally-submit")
+	t.Setenv("OIDC_AUDIENCE", "rally")
+	t.Setenv("ATTENDEE_OIDC_AUDIENCE", "rally")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "ATTENDEE_OIDC_AUDIENCE must differ") {
+		t.Fatalf("err = %v", err)
 	}
 }
 

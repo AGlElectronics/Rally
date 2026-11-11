@@ -125,6 +125,46 @@ func TestRealmSeparation(t *testing.T) {
 	}
 }
 
+// The token contract: only access tokens for this API pass.
+func TestAccessTokensOnly(t *testing.T) {
+	f := oidctest.New(t)
+	ctx := context.Background()
+	cfg := staffConfig(f)
+	cfg.OIDCAudience = "" // the default, events-api
+	v, err := NewOIDCVerifier(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name   string
+		claims map[string]any
+		want   error
+	}{
+		{"access token for Rally", map[string]any{"typ": "Bearer", "aud": []string{"events-api", "account"}, "azp": "events-spa"}, nil},
+		{"ID token (aud = client id)", map[string]any{"typ": "ID", "aud": "events-spa"}, errAny},
+		{"ID token that names the API", map[string]any{"typ": "ID", "aud": "events-api"}, ErrIDToken},
+		{"access token for HR", map[string]any{"typ": "Bearer", "aud": "hr-api"}, errAny},
+		{"access token without audience", map[string]any{"typ": "Bearer"}, errAny},
+	}
+	for _, tc := range cases {
+		claims := map[string]any{"sub": "u1"}
+		for k, val := range tc.claims {
+			claims[k] = val
+		}
+		_, err := v.Verify(ctx, f.Token("staff", claims))
+		switch {
+		case tc.want == nil && err != nil:
+			t.Errorf("%s: %v, want accepted", tc.name, err)
+		case tc.want == errAny && err == nil:
+			t.Errorf("%s: accepted, want refused", tc.name)
+		case tc.want != nil && tc.want != errAny && !errors.Is(err, tc.want):
+			t.Errorf("%s: %v, want %v", tc.name, err, tc.want)
+		}
+	}
+}
+
+var errAny = errors.New("any error")
+
 // Attendee tokens never carry groups, whatever the token says.
 func TestAttendeeVerifierIgnoresGroups(t *testing.T) {
 	f := oidctest.New(t)

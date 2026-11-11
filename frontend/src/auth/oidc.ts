@@ -1,4 +1,4 @@
-import { UserManager, WebStorageStateStore } from 'oidc-client-ts';
+import { InMemoryWebStorage, UserManager, WebStorageStateStore, type User } from 'oidc-client-ts';
 import { runtimeConfig } from '@/runtime-config';
 
 /** True when the SPA was built for Keycloak / OIDC (Bearer tokens). */
@@ -12,6 +12,11 @@ let manager: UserManager | null | undefined;
  * Lazily construct the oidc-client-ts UserManager. Returns null when OIDC
  * is enabled but misconfigured (missing authority/client id), so callers
  * can surface a clear error instead of a runtime crash.
+ *
+ * Tokens are kept in memory only (token contract): a script injected into
+ * the page cannot read them from localStorage or sessionStorage. After a
+ * reload the app signs in again silently through the Keycloak session
+ * (currentUser), so nobody has to type a password.
  */
 export function getUserManager(): UserManager | null {
   if (manager !== undefined) {
@@ -38,10 +43,66 @@ export function getUserManager(): UserManager | null {
     automaticSilentRenew: true,
     silent_redirect_uri: `${window.location.origin}/silent-callback.html`,
     monitorSession: true,
-    // Shared by all tabs so a sign-out / user switch reaches every tab (see session.ts).
-    userStore: new WebStorageStateStore({ store: window.localStorage }),
+    userStore: new WebStorageStateStore({ store: new InMemoryWebStorage() }),
   });
+  manager.events.addUserLoaded(() => setSessionHint(true));
+  manager.events.addUserSignedOut(() => setSessionHint(false));
   return manager;
+}
+
+// Whether this browser signed in before. Not a token: it only tells the
+// submission site whether a silent sign-in is worth trying for a visitor
+// who may never have had an account.
+const SESSION_HINT_KEY = 'rally.oidc.signedIn';
+
+function setSessionHint(on: boolean): void {
+  try {
+    if (on) window.localStorage.setItem(SESSION_HINT_KEY, '1');
+    else window.localStorage.removeItem(SESSION_HINT_KEY);
+  } catch {
+    // Storage blocked: silent sign-in is then tried only where required.
+  }
+}
+
+function hadSession(): boolean {
+  try {
+    return window.localStorage.getItem(SESSION_HINT_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+let restoring: Promise<User | null> | null = null;
+
+/**
+ * The signed-in user, or null. Without a valid user in memory (after a
+ * reload, or when the access token expired) it signs in silently through the
+ * Keycloak session; with `silent: 'if-signed-in-before'` only when this
+ * browser signed in before. Concurrent callers share one attempt.
+ */
+export async function currentUser(opts: { silent?: true | 'if-signed-in-before' } = { silent: true }): Promise<User | null> {
+  const mgr = getUserManager();
+  if (!mgr) return null;
+  const user = await mgr.getUser();
+  if (user && !user.expired) return user;
+  if (!opts.silent || (opts.silent === 'if-signed-in-before' && !hadSession())) return null;
+  restoring ??= mgr
+    .signinSilent()
+    .catch(() => {
+      setSessionHint(false);
+      return null;
+    })
+    .finally(() => {
+      restoring = null;
+    });
+  return restoring;
+}
+
+/** The Authorization header for the API: the access token, never the ID token. */
+export async function bearerHeaders(): Promise<Record<string, string>> {
+  const user = await currentUser();
+  if (!user?.access_token) return {};
+  return { Authorization: `Bearer ${user.access_token}` };
 }
 
 export async function signInWithOidc(returnPath: string): Promise<void> {
@@ -69,5 +130,6 @@ export async function signOutOidc(): Promise<void> {
   if (!mgr) {
     return;
   }
+  setSessionHint(false);
   await mgr.signoutRedirect();
 }

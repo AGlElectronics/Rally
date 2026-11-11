@@ -32,6 +32,9 @@ type OIDCVerifier struct {
 // attendee token on the staff API, or a staff token on the public site.
 var ErrOtherRealm = errors.New("token was issued by the other realm")
 
+// ErrIDToken is returned for an ID token: the API needs the access token.
+var ErrIDToken = errors.New("ID tokens are not accepted; send the access token")
+
 // Issuer is the issuer this verifier accepts, as published by the identity
 // provider's discovery document.
 func (v *OIDCVerifier) Issuer() string { return v.issuer }
@@ -72,6 +75,9 @@ type OIDCClaims struct {
 	PreferredUsername string `json:"preferred_username"`
 	Name              string `json:"name"`
 	Nickname          string `json:"nickname"`
+	// Type is Keycloak's typ claim: "Bearer" for access tokens, "ID" for
+	// ID tokens.
+	Type string `json:"typ"`
 	// Groups come only from the claim named by OIDC_GROUPS_CLAIM (shared
 	// groupmatch rule); the "roles" claim is never merged in. Always empty
 	// for attendees.
@@ -87,7 +93,7 @@ func NewOIDCVerifier(ctx context.Context, cfg *config.Config) (*OIDCVerifier, er
 	}
 	audience := cfg.OIDCAudience
 	if audience == "" {
-		audience = cfg.OIDCClientID
+		audience = config.DefaultOIDCAudience
 	}
 	v, err := NewOIDCVerifierFor(ctx, cfg.OIDCIssuerURL, audience)
 	if err != nil {
@@ -165,6 +171,11 @@ func (v *OIDCVerifier) Verify(ctx context.Context, bearer string) (*OIDCClaims, 
 	}
 	if c.Subject == "" {
 		return nil, errors.New("token missing sub claim")
+	}
+	// The token contract: APIs take access tokens, never ID tokens, even
+	// when an ID token happens to carry the API's audience.
+	if strings.EqualFold(c.Type, "ID") {
+		return nil, ErrIDToken
 	}
 	// Pin the issuer to what the verifier was configured with. Keycloak
 	// token issuers include trailing /realm paths; always use what we
