@@ -111,6 +111,13 @@ version. Rebuilds get no entry here.
 
 ### Changed
 
+- The shared Den client is the current copy from `con-services`. Go error
+  text is lowercase; the sentence an admin sees when pairing fails, and
+  the text stored in `den_link.last_error`, stays the original wording.
+  Rally does not send mail, so it does not fetch Den's SMTP password.
+- `frontend.cspConnectSrc` is added only to `connect-src`. It used to be
+  copied into `frame-src` as well. Put a sign-in server on
+  `KEYCLOAK_ORIGIN` (the chart takes it from the app's issuer URL).
 - `AUTH_MODE` now defaults to `oidc` and `APP_ENV` to `production`.
   `AUTH_MODE=dev` stops the backend unless `APP_ENV=development`; the
   development Compose file and `.env.example` set `APP_ENV=development`.
@@ -135,6 +142,15 @@ version. Rebuilds get no entry here.
 
 ### Security
 
+- A reload can sign in again on the staff app and the submission site.
+  `/silent-callback.html` may be framed by that app itself
+  (`frame-ancestors 'self'`, `X-Frame-Options: SAMEORIGIN`). Every other
+  page stays unframeable. The Content Security Policy is the current
+  shared one: images may also load from `S3_ORIGIN`, and
+  `EXTRA_FRAME_SRC` stays empty. The submission site still takes the
+  attendee realm's server as `KEYCLOAK_ORIGIN` (audience
+  `events-public-api` is not an origin) and the upload bucket as
+  `S3_ORIGIN`.
 - The Den credential is stored encrypted with `DEN_LINK_ENCRYPTION_KEY`
   (AES-256-GCM); a credential stored before is encrypted on its next read.
   Rotation: `DEN_LINK_ENCRYPTION_KEY_PREVIOUS`.

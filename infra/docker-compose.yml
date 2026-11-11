@@ -154,6 +154,8 @@ services:
     environment:
       # Origins allowed by the Content-Security-Policy besides the app:
       # the sign-in server (empty with dev sign-in) and the upload bucket.
+      # The submission site image sets KEYCLOAK_ORIGIN to the attendee
+      # realm's server. EXTRA_FRAME_SRC stays empty (the image default).
       KEYCLOAK_ORIGIN: ${KEYCLOAK_ORIGIN:-}
       S3_ORIGIN: ${S3_ORIGIN:-http://localhost:9020}
     restart: unless-stopped
