@@ -93,6 +93,35 @@ func TestLoadRequiresDenKeyOutsideDevelopment(t *testing.T) {
 	}
 }
 
+func TestNormalizeIssuer(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://auth.example.org/realms/staff":           "https://auth.example.org/realms/staff",
+		" HTTPS://Auth.Example.org/realms/staff/ ":        "https://auth.example.org/realms/staff",
+		"https://auth.example.org:443/realms/staff":       "https://auth.example.org/realms/staff",
+		"http://localhost:8080/realms/Staff":              "http://localhost:8080/realms/Staff",
+		"http://keycloak:80/realms/attendees//":           "http://keycloak/realms/attendees",
+		"https://tenant.eu.auth0.com/":                    "https://tenant.eu.auth0.com",
+		"https://auth.example.org/realms/staff?ignored=1": "https://auth.example.org/realms/staff",
+	} {
+		if got := NormalizeIssuer(in); got != want {
+			t.Errorf("NormalizeIssuer(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestLoadRejectsAttendeeRealmEqualToStaff(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("ATTENDEE_OIDC_ISSUER_URL", "https://AUTH.example.org:443/realms/staff/")
+	t.Setenv("ATTENDEE_OIDC_CLIENT_ID", "rally-submit")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "ATTENDEE_OIDC_ISSUER_URL must be a different realm") {
+		t.Fatalf("err = %v, want the realm separation error", err)
+	}
+	t.Setenv("ATTENDEE_OIDC_ISSUER_URL", "https://auth.example.org/realms/attendees")
+	if _, err := Load(); err != nil {
+		t.Fatalf("separate realms: %v", err)
+	}
+}
+
 func TestLoadGroupMatching(t *testing.T) {
 	baseEnv(t)
 	cfg, err := Load()

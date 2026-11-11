@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -50,6 +51,11 @@ func Middleware(cfg *config.Config, resolver *Resolver, oidcVerifier *OIDCVerifi
 					return
 				}
 				claims, err := oidcVerifier.Verify(ctx, bearer)
+				if errors.Is(err, ErrOtherRealm) {
+					log.Ctx(ctx).Info().Msg("refused an attendee-realm token on the staff API")
+					httperror.Render(w, r, httperror.New(httperror.CodeUnauthorized, "attendee accounts cannot use the staff API"))
+					return
+				}
 				if err != nil {
 					log.Ctx(ctx).Debug().Err(err).Msg("oidc verify failed")
 					httperror.Render(w, r, httperror.New(httperror.CodeUnauthorized, "invalid token"))

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -252,7 +253,7 @@ func (c *Config) validate() error {
 		if c.AttendeeOIDCIssuerURL != "" && c.AttendeeOIDCClientID == "" {
 			errs = append(errs, "ATTENDEE_OIDC_CLIENT_ID is required when ATTENDEE_OIDC_ISSUER_URL is set")
 		}
-		if c.AttendeeOIDCIssuerURL != "" && c.AttendeeOIDCIssuerURL == c.OIDCIssuerURL {
+		if c.AttendeeOIDCIssuerURL != "" && NormalizeIssuer(c.AttendeeOIDCIssuerURL) == NormalizeIssuer(c.OIDCIssuerURL) {
 			errs = append(errs, "ATTENDEE_OIDC_ISSUER_URL must be a different realm than OIDC_ISSUER_URL (staff)")
 		}
 	case AuthModeDev:
@@ -270,6 +271,23 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// NormalizeIssuer is the form two issuer URLs are compared in: trimmed,
+// scheme and host lower-cased, default port and trailing slashes removed.
+// It is only for comparisons; discovery and stored identities use the
+// issuer exactly as the identity provider publishes it.
+func NormalizeIssuer(s string) string {
+	s = strings.TrimSpace(s)
+	u, err := url.Parse(s)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return strings.TrimRight(strings.ToLower(s), "/")
+	}
+	scheme, host := strings.ToLower(u.Scheme), strings.ToLower(u.Host)
+	if (scheme == "https" && strings.HasSuffix(host, ":443")) || (scheme == "http" && strings.HasSuffix(host, ":80")) {
+		host = host[:strings.LastIndex(host, ":")]
+	}
+	return scheme + "://" + host + strings.TrimRight(u.EscapedPath(), "/")
 }
 
 // rateLimit reads a rate ("60/m", or "off") and its burst.

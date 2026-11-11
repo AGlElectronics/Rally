@@ -122,8 +122,8 @@ func NewRouter(deps Deps, version string) http.Handler {
 	r.Use(hlog.RequestIDHandler("request_id", "X-Request-ID"))
 
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   deps.Config.CORSAllowedOrigins,
-		AllowedMethods:   []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
+		AllowedOrigins: deps.Config.CORSAllowedOrigins,
+		AllowedMethods: []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
 		// X-Dev-User and X-Dev-Groups only in dev mode.
 		AllowedHeaders:   authCfg.AllowedHeaders(),
 		ExposedHeaders:   []string{"X-Request-ID"},

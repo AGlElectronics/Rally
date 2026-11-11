@@ -100,6 +100,9 @@ func Run(ctx context.Context, logger zerolog.Logger) error {
 	} else if cfg.AuthMode == config.AuthModeOIDC {
 		logger.Warn().Msg("ATTENDEE_OIDC_ISSUER_URL not set — public submission sign-in is disabled")
 	}
+	if err := auth.SeparateRealms(oidcVerifier, attendeeVerifier); err != nil {
+		return err
+	}
 
 	// Access config catalog. The scaffold ships a built-in default; the
 	// TOML/JSON loader stub ensures a bogus ACCESS_CONFIG_PATH fails loudly.

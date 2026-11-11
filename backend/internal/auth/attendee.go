@@ -53,6 +53,11 @@ func AttendeeMiddleware(cfg *config.Config, resolver *Resolver, verifier *OIDCVe
 					return
 				}
 				claims, verr := verifier.Verify(ctx, bearer)
+				if errors.Is(verr, ErrOtherRealm) {
+					log.Ctx(ctx).Info().Msg("refused a staff-realm token on the public API")
+					httperror.Render(w, r, httperror.New(httperror.CodeUnauthorized, "staff accounts cannot use the submission site; sign in with an attendee account"))
+					return
+				}
 				if verr != nil {
 					log.Ctx(ctx).Debug().Err(verr).Msg("attendee token verify failed")
 					httperror.Render(w, r, httperror.New(httperror.CodeUnauthorized, "invalid token"))
