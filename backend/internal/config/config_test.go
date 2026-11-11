@@ -25,6 +25,7 @@ func baseEnv(t *testing.T) {
 		"OIDC_GROUPS_CLAIM":        "",
 		"OIDC_GROUP_MATCH":         "",
 		"OIDC_GROUP_PREFIX":        "",
+		"HR_SERVICE_TOKEN":         "",
 	} {
 		t.Setenv(k, v)
 	}
@@ -119,6 +120,19 @@ func TestLoadRejectsAttendeeRealmEqualToStaff(t *testing.T) {
 	t.Setenv("ATTENDEE_OIDC_ISSUER_URL", "https://auth.example.org/realms/attendees")
 	if _, err := Load(); err != nil {
 		t.Fatalf("separate realms: %v", err)
+	}
+}
+
+func TestLoadHRServiceToken(t *testing.T) {
+	baseEnv(t)
+	t.Setenv("HR_SERVICE_TOKEN", "short")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "HR_SERVICE_TOKEN") {
+		t.Fatalf("err = %v, want a length error", err)
+	}
+	t.Setenv("HR_SERVICE_TOKEN", " "+strings.Repeat("a", MinServiceTokenLength)+" ")
+	cfg, err := Load()
+	if err != nil || cfg.HRServiceToken != strings.Repeat("a", MinServiceTokenLength) {
+		t.Fatalf("HRServiceToken = %q, %v", cfg.HRServiceToken, err)
 	}
 }
 

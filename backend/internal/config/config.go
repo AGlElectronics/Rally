@@ -52,6 +52,9 @@ type RateLimit struct {
 // DenSlug is the slug Rally pairs with Den under (Den's built-in name for it).
 const DenSlug = "events"
 
+// MinServiceTokenLength is the shortest HR_SERVICE_TOKEN accepted.
+const MinServiceTokenLength = 32
+
 // Config is the validated process configuration. Fields are grouped by
 // concern so new flags can be added next to related ones.
 type Config struct {
@@ -105,6 +108,10 @@ type Config struct {
 	// it buys rotation and per-client tracking, not secrecy. Changing it
 	// rotates the key; empty removes it.
 	PublicAPIBuiltinKey string
+
+	// HRServiceToken is HR_SERVICE_TOKEN: the token HR's backend sends to
+	// read GET /api/role-catalog. Empty: only staff sign-ins may read it.
+	HRServiceToken string
 
 	// Telegram bot for live-day announcements. Empty token = dry run: sends
 	// are recorded but nothing leaves the server.
@@ -178,6 +185,7 @@ func Load() (*Config, error) {
 
 		PublicScheduleEnabled: getEnvBool("PUBLIC_SCHEDULE_ENABLED", false),
 		PublicAPIBuiltinKey:   getEnv("PUBLIC_API_BUILTIN_KEY", ""),
+		HRServiceToken:        strings.TrimSpace(getEnv("HR_SERVICE_TOKEN", "")),
 		TelegramBotToken:      getEnv("TELEGRAM_BOT_TOKEN", ""),
 		TelegramAPIURL:        getEnv("TELEGRAM_API_URL", "https://api.telegram.org"),
 
@@ -221,6 +229,9 @@ func (c *Config) validate() error {
 	}
 	if err := c.Groups.Validate(); err != nil {
 		errs = append(errs, err.Error())
+	}
+	if c.HRServiceToken != "" && len(c.HRServiceToken) < MinServiceTokenLength {
+		errs = append(errs, fmt.Sprintf("HR_SERVICE_TOKEN must be at least %d characters (generate one with: openssl rand -hex 32)", MinServiceTokenLength))
 	}
 
 	if c.S3Enabled {

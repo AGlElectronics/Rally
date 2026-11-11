@@ -19,7 +19,37 @@ import (
 type AccessConfig struct {
 	rolePerms map[string]map[string]struct{}
 	roleDesc  map[string]string
-	bindings  []GroupBinding
+	// rolePriv holds the file's explicit privileged = true/false.
+	rolePriv map[string]bool
+	bindings []GroupBinding
+}
+
+// privilegedPermissions make a role privileged in the role catalog: they
+// change settings, grant access or show other people's data (submissions
+// and their speakers, members, the audit log).
+var privilegedPermissions = []string{
+	domain.PermOrgManage, domain.PermEditionEdit,
+	domain.PermMemberView, domain.PermMemberManage, domain.PermAuditView,
+	domain.PermCfPManage, domain.PermSubmissionReview, domain.PermSubmissionDecide,
+	domain.PermSchedulePublish,
+}
+
+// Privileged reports whether role is an admin-type role for HR: the file's
+// privileged setting when given, else whether it holds any of
+// privilegedPermissions.
+func (c *AccessConfig) Privileged(role string) bool {
+	if c == nil {
+		return false
+	}
+	if p, ok := c.rolePriv[role]; ok {
+		return p
+	}
+	for _, p := range privilegedPermissions {
+		if _, ok := c.rolePerms[role][p]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // GroupBinding grants Role organization-wide in Organization (a slug) to
@@ -110,6 +140,8 @@ type accessFile struct {
 type accessFileRole struct {
 	Description string   `toml:"description"`
 	Permissions []string `toml:"permissions"`
+	// Privileged overrides the role catalog's privileged flag.
+	Privileged *bool `toml:"privileged"`
 }
 
 type accessFileBinding struct {
@@ -146,11 +178,15 @@ func parseAccessConfig(data []byte) (*AccessConfig, error) {
 	// A role listed in the file replaces its built-in permission set.
 	rolePerms := defaultRolePermSets()
 	roleDesc := map[string]string{}
+	rolePriv := map[string]bool{}
 	for name, entry := range f.Roles {
 		if strings.TrimSpace(name) == "" {
 			return nil, fmt.Errorf("roles: role name must not be empty")
 		}
 		roleDesc[name] = entry.Description
+		if entry.Privileged != nil {
+			rolePriv[name] = *entry.Privileged
+		}
 		set := map[string]struct{}{}
 		for _, p := range entry.Permissions {
 			if _, ok := known[p]; !ok {
@@ -186,7 +222,7 @@ func parseAccessConfig(data []byte) (*AccessConfig, error) {
 		bindings = append(bindings, GroupBinding{Group: grant, Role: b.Role, Organization: org})
 	}
 
-	return &AccessConfig{rolePerms: rolePerms, roleDesc: roleDesc, bindings: bindings}, nil
+	return &AccessConfig{rolePerms: rolePerms, roleDesc: roleDesc, rolePriv: rolePriv, bindings: bindings}, nil
 }
 
 func defaultRolePermSets() map[string]map[string]struct{} {

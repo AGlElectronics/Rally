@@ -1,4 +1,6 @@
-package auth
+// Package oidctest is a fake OIDC identity provider for tests: discovery,
+// signing keys and RS256 tokens for any number of realms.
+package oidctest
 
 import (
 	"crypto"
@@ -15,35 +17,36 @@ import (
 	"time"
 )
 
-// fakeIssuer serves OIDC discovery and signing keys for any number of realms
-// under /realms/<name>, all signed with one RSA key.
-type fakeIssuer struct {
-	t   *testing.T
+// Issuer serves OIDC discovery and signing keys for realms under
+// /realms/<name>, all signed with one RSA key.
+type Issuer struct {
+	t   testing.TB
 	srv *httptest.Server
 	key *rsa.PrivateKey
 }
 
-func newFakeIssuer(t *testing.T) *fakeIssuer {
+// New starts a fake issuer that stops when the test ends.
+func New(t testing.TB) *Issuer {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &fakeIssuer{t: t, key: key}
+	f := &Issuer{t: t, key: key}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.srv.Close)
 	return f
 }
 
-// issuer is the issuer URL of realm.
-func (f *fakeIssuer) issuer(realm string) string { return f.srv.URL + "/realms/" + realm }
+// URL is the issuer URL of realm.
+func (f *Issuer) URL(realm string) string { return f.srv.URL + "/realms/" + realm }
 
-func (f *fakeIssuer) serve(w http.ResponseWriter, r *http.Request) {
+func (f *Issuer) serve(w http.ResponseWriter, r *http.Request) {
 	realm, rest, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/realms/"), "/")
 	w.Header().Set("Content-Type", "application/json")
 	switch rest {
 	case ".well-known/openid-configuration":
-		iss := f.issuer(realm)
+		iss := f.URL(realm)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"issuer":                                iss,
 			"authorization_endpoint":                iss + "/auth",
@@ -62,10 +65,10 @@ func (f *fakeIssuer) serve(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// token signs claims; iss, exp and iat get defaults when not set.
-func (f *fakeIssuer) token(realm string, claims map[string]any) string {
+// Token signs claims for realm; iss, exp and iat get defaults when not set.
+func (f *Issuer) Token(realm string, claims map[string]any) string {
 	f.t.Helper()
-	c := map[string]any{"iss": f.issuer(realm), "exp": time.Now().Add(5 * time.Minute).Unix(), "iat": time.Now().Unix()}
+	c := map[string]any{"iss": f.URL(realm), "exp": time.Now().Add(5 * time.Minute).Unix(), "iat": time.Now().Unix()}
 	for k, v := range claims {
 		c[k] = v
 	}

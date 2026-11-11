@@ -11,12 +11,13 @@ import (
 
 	"github.com/AGlElectronics/rally/backend/internal/config"
 	"github.com/AGlElectronics/rally/backend/internal/groupmatch"
+	"github.com/AGlElectronics/rally/backend/internal/oidctest"
 )
 
-func staffConfig(f *fakeIssuer) *config.Config {
+func staffConfig(f *oidctest.Issuer) *config.Config {
 	return &config.Config{
 		AuthMode:      config.AuthModeOIDC,
-		OIDCIssuerURL: f.issuer("staff"),
+		OIDCIssuerURL: f.URL("staff"),
 		OIDCClientID:  "events-spa",
 		OIDCAudience:  "events-api",
 		Groups:        groupmatch.Config{Claim: "groups", Mode: groupmatch.ModeFull},
@@ -26,13 +27,13 @@ func staffConfig(f *fakeIssuer) *config.Config {
 // Groups come only from OIDC_GROUPS_CLAIM: a realm role in "roles" grants
 // nothing.
 func TestStaffGroupsOnlyFromConfiguredClaim(t *testing.T) {
-	f := newFakeIssuer(t)
+	f := oidctest.New(t)
 	ctx := context.Background()
 	v, err := NewOIDCVerifier(ctx, staffConfig(f))
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := v.Verify(ctx, f.token("staff", map[string]any{
+	c, err := v.Verify(ctx, f.Token("staff", map[string]any{
 		"sub": "u1", "aud": "events-api",
 		"groups": []string{"/events-reviewer"}, "roles": []string{"events-admin"},
 	}))
@@ -49,7 +50,7 @@ func TestStaffGroupsOnlyFromConfiguredClaim(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err = v.Verify(ctx, f.token("staff", map[string]any{
+	c, err = v.Verify(ctx, f.Token("staff", map[string]any{
 		"sub": "u1", "aud": "events-api",
 		"groups": []string{"/events-reviewer"}, "realm_access": map[string]any{"roles": []string{"events-admin"}},
 	}))
@@ -64,20 +65,20 @@ func TestStaffGroupsOnlyFromConfiguredClaim(t *testing.T) {
 // Each realm's verifier refuses the other realm's tokens, and the
 // middlewares say so.
 func TestRealmSeparation(t *testing.T) {
-	f := newFakeIssuer(t)
+	f := oidctest.New(t)
 	ctx := context.Background()
 	cfg := staffConfig(f)
 	staff, err := NewOIDCVerifier(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	att, err := NewOIDCVerifierFor(ctx, f.issuer("attendees"), "events-api")
+	att, err := NewOIDCVerifierFor(ctx, f.URL("attendees"), "events-api")
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Same audience on purpose: only the realm tells the tokens apart.
-	staffTok := f.token("staff", map[string]any{"sub": "s1", "aud": "events-api"})
-	attTok := f.token("attendees", map[string]any{"sub": "a1", "aud": "events-api"})
+	staffTok := f.Token("staff", map[string]any{"sub": "s1", "aud": "events-api"})
+	attTok := f.Token("attendees", map[string]any{"sub": "a1", "aud": "events-api"})
 
 	if err := SeparateRealms(staff, att); err != nil {
 		t.Fatalf("SeparateRealms: %v", err)
@@ -90,11 +91,11 @@ func TestRealmSeparation(t *testing.T) {
 	}
 	// The comparison is on normalised issuers: a trailing slash or upper
 	// case host does not get a token past it.
-	odd := "HTTP" + strings.TrimPrefix(f.issuer("attendees"), "http") + "/"
-	if _, err := staff.Verify(ctx, f.token("attendees", map[string]any{"iss": odd, "sub": "a1", "aud": "events-api"})); !errors.Is(err, ErrOtherRealm) {
+	odd := "HTTP" + strings.TrimPrefix(f.URL("attendees"), "http") + "/"
+	if _, err := staff.Verify(ctx, f.Token("attendees", map[string]any{"iss": odd, "sub": "a1", "aud": "events-api"})); !errors.Is(err, ErrOtherRealm) {
 		t.Errorf("staff verifier, attendee token with iss %q: %v, want ErrOtherRealm", odd, err)
 	}
-	if c, err := staff.Verify(ctx, staffTok); err != nil || c.Issuer != f.issuer("staff") {
+	if c, err := staff.Verify(ctx, staffTok); err != nil || c.Issuer != f.URL("staff") {
 		t.Errorf("staff token: %+v %v", c, err)
 	}
 
@@ -112,7 +113,7 @@ func TestRealmSeparation(t *testing.T) {
 		t.Errorf("public API, staff token: %d %s", rec.Code, rec.Body.String())
 	}
 
-	same, err := NewOIDCVerifierFor(ctx, f.issuer("staff"), "events-public-api")
+	same, err := NewOIDCVerifierFor(ctx, f.URL("staff"), "events-public-api")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,13 +127,13 @@ func TestRealmSeparation(t *testing.T) {
 
 // Attendee tokens never carry groups, whatever the token says.
 func TestAttendeeVerifierIgnoresGroups(t *testing.T) {
-	f := newFakeIssuer(t)
+	f := oidctest.New(t)
 	ctx := context.Background()
-	v, err := NewOIDCVerifierFor(ctx, f.issuer("attendees"), "events-public-api")
+	v, err := NewOIDCVerifierFor(ctx, f.URL("attendees"), "events-public-api")
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := v.Verify(ctx, f.token("attendees", map[string]any{
+	c, err := v.Verify(ctx, f.Token("attendees", map[string]any{
 		"sub": "a1", "aud": "events-public-api", "groups": []string{"/events-admin"},
 	}))
 	if err != nil {

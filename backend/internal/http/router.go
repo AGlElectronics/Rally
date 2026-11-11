@@ -8,6 +8,7 @@
 //	GET /livez             — process liveness (unauthenticated)
 //	GET /readyz            — service readiness (unauthenticated)
 //	GET /api/health        — richer status for humans
+//	GET /api/role-catalog  — roles for HR (HR_SERVICE_TOKEN or a staff sign-in)
 //	GET /api/den/state     — Den mode and pairing (unauthenticated; also /api/v1/den/state)
 //	GET /api/v1/brand      — active brand package (unauthenticated)
 //	GET /api/v1/me         — authenticated principal + permissions
@@ -121,10 +122,10 @@ func NewRouter(deps Deps, version string) http.Handler {
 	}))
 	r.Use(hlog.RequestIDHandler("request_id", "X-Request-ID"))
 
+	// AllowedHeaders has X-Dev-User and X-Dev-Groups only in dev mode.
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins: deps.Config.CORSAllowedOrigins,
-		AllowedMethods: []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
-		// X-Dev-User and X-Dev-Groups only in dev mode.
+		AllowedOrigins:   deps.Config.CORSAllowedOrigins,
+		AllowedMethods:   []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   authCfg.AllowedHeaders(),
 		ExposedHeaders:   []string{"X-Request-ID"},
 		AllowCredentials: true,
@@ -186,7 +187,8 @@ func NewRouter(deps Deps, version string) http.Handler {
 	r.Route("/api", func(api chi.Router) {
 		api.Use(den.RequirePaired)
 		api.Get("/health", health.get)
-		api.Get("/role-catalog", roleCatalogHandler(deps.Access))
+		api.With(requireCatalogReader(deps.Config.HRServiceToken, deps.Config.DevAuth(), authMW)).
+			Get("/role-catalog", roleCatalogHandler(deps.Access))
 		api.Get("/den/state", den.StateHandler)
 
 		// Public submission site. Only attendee-realm tokens work here, and
