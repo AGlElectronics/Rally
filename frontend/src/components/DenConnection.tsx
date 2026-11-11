@@ -9,6 +9,9 @@ type DenStatus = {
   paired_at?: string;
   synced_at?: string;
   last_error?: string;
+  /** Den rejected the stored credential; pairing again clears it. */
+  revoked?: boolean;
+  revoked_at?: string;
 };
 
 /**
@@ -21,6 +24,7 @@ export function DenConnection({ base, onPaired }: { base: string; onPaired?: () 
   const [url, setUrl] = useState('');
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ['den-status'] });
+    void qc.invalidateQueries({ queryKey: ['den-state'] });
     void qc.invalidateQueries({ queryKey: ['settings'] });
     void qc.invalidateQueries({ queryKey: ['module-brand'] });
   };
@@ -37,6 +41,24 @@ export function DenConnection({ base, onPaired }: { base: string; onPaired?: () 
   const s = status.data;
   const error = (pair.error ?? sync.error ?? unpair.error) as Error | null;
 
+  const pairForm = (hint: string) => (
+    <form className="space-y-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        pair.mutate();
+      }}>
+      <p className="text-muted-foreground">{hint}</p>
+      <div className="flex gap-2">
+        <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://den.example/api/v1/integrations/pairing/redeem?token=…"
+          className="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 font-mono text-xs" />
+        <button type="submit" disabled={!url.trim() || pair.isPending}
+          className="rounded-pill bg-primary px-4 py-2 font-semibold text-primary-foreground disabled:opacity-60">
+          {pair.isPending ? 'Connecting…' : 'Connect'}
+        </button>
+      </div>
+    </form>
+  );
+
   return (
     <section className="space-y-3 rounded-lg border border-border bg-card p-4 text-sm">
       <div>
@@ -47,6 +69,15 @@ export function DenConnection({ base, onPaired }: { base: string; onPaired?: () 
       </div>
       {status.isPending ? (
         <p className="text-muted-foreground">Checking…</p>
+      ) : s?.paired && s.revoked ? (
+        <>
+          <p role="alert" className="text-destructive">
+            Den rejected this module&apos;s credential: pair again. The module keeps using the last settings it received
+            from <code className="font-mono">{s.den_base_url}</code>
+            {s.revoked_at && <> (rejected {new Date(s.revoked_at).toLocaleString()})</>}.
+          </p>
+          {pairForm('In Den, open Modules, create a new pairing URL for this module and paste it here.')}
+        </>
       ) : s?.paired ? (
         <>
           <p>
@@ -69,23 +100,7 @@ export function DenConnection({ base, onPaired }: { base: string; onPaired?: () 
           </div>
         </>
       ) : (
-        <form className="space-y-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            pair.mutate();
-          }}>
-          <p className="text-muted-foreground">
-            Standalone. To connect, open Den → Admin → Modules, create a pairing URL for this module and paste it here.
-          </p>
-          <div className="flex gap-2">
-            <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://den.example/api/v1/integrations/pairing/redeem?token=…"
-              className="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 font-mono text-xs" />
-            <button type="submit" disabled={!url.trim() || pair.isPending}
-              className="rounded-pill bg-primary px-4 py-2 font-semibold text-primary-foreground disabled:opacity-60">
-              {pair.isPending ? 'Connecting…' : 'Connect'}
-            </button>
-          </div>
-        </form>
+        pairForm('Standalone. To connect, open Den → Admin → Modules, create a pairing URL for this module and paste it here.')
       )}
       {error && <p className="text-destructive">{error.message}</p>}
     </section>

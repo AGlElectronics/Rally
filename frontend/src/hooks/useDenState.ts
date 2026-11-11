@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { ApiError, apiRequest } from '@/api/client';
 
-export type DenState = { mode: 'required' | 'standalone'; paired: boolean };
+/** revoked: Den rejected this module's credential; an admin must pair again. */
+export type DenState = { mode: 'required' | 'standalone'; paired: boolean; revoked?: boolean };
 
 /** Backends from before DEN_MODE have no state endpoint (404); they never require pairing. */
 export async function getDenState(signal?: AbortSignal): Promise<DenState> {
@@ -11,6 +12,11 @@ export async function getDenState(signal?: AbortSignal): Promise<DenState> {
     if (err instanceof ApiError && err.status === 404) return { mode: 'standalone', paired: false };
     throw err;
   }
+}
+
+/** Whether Den rejected the module's credential (the module keeps its last bundle meanwhile). */
+export function isDenRevoked(state: DenState | undefined): boolean {
+  return !!state?.paired && !!state.revoked;
 }
 
 /** Whether the backend runs with DEN_MODE=required and is not paired yet. */
