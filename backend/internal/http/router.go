@@ -132,7 +132,7 @@ func NewRouter(deps Deps, version string) http.Handler {
 	}))
 
 	health := newHealthHandler(deps.Pool, version)
-	resolver := auth.NewResolver(deps.Pool, deps.Access)
+	resolver := auth.NewResolver(deps.Pool, deps.Access, deps.Config.Groups)
 	authMW := auth.Middleware(deps.Config, resolver, deps.OIDCVerifier)
 
 	den := deps.Den

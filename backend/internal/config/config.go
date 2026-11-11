@@ -18,6 +18,7 @@ import (
 	"github.com/AGlElectronics/rally/backend/internal/authbase"
 	"github.com/AGlElectronics/rally/backend/internal/clientip"
 	"github.com/AGlElectronics/rally/backend/internal/denlink"
+	"github.com/AGlElectronics/rally/backend/internal/groupmatch"
 )
 
 // AuthMode selects how incoming requests are authenticated (AUTH_MODE,
@@ -77,6 +78,10 @@ type Config struct {
 	OIDCAudience     string
 	AccessConfigPath string
 	DevDefaultUser   string
+	// Groups is how staff group claims are read and compared with the
+	// access config bindings (OIDC_GROUPS_CLAIM, OIDC_GROUP_MATCH,
+	// OIDC_GROUP_PREFIX). Attendee tokens never use it.
+	Groups groupmatch.Config
 
 	// Attendee login for the public submission site: a separate realm from
 	// staff. Empty issuer in oidc mode = public sign-in is unavailable.
@@ -196,6 +201,7 @@ func Load() (*Config, error) {
 	// same APP_ENV as everything else.
 	cfg.Den, _ = denlink.FromEnv(DenSlug, "", os.Getenv)
 	cfg.Den.AppEnv = cfg.AppEnv
+	cfg.Groups, _ = groupmatch.FromEnv(os.Getenv)
 
 	if err := cfg.validate(); err != nil {
 		return nil, err
@@ -210,6 +216,9 @@ func (c *Config) validate() error {
 		errs = append(errs, "DATABASE_URL is required")
 	}
 	if err := c.Den.Validate(); err != nil {
+		errs = append(errs, err.Error())
+	}
+	if err := c.Groups.Validate(); err != nil {
 		errs = append(errs, err.Error())
 	}
 

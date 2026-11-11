@@ -60,7 +60,7 @@ func roleCatalogHandler(access *auth.AccessConfig) http.HandlerFunc {
 				}
 				bound = true
 				entry := base
-				entry.Group = b.Group
+				entry.Group = b.Group.Stored
 				entry.Assignable = true
 				entry.Scope = "organization:" + b.Organization
 				roles = append(roles, entry)

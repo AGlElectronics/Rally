@@ -9,6 +9,7 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 
 	"github.com/AGlElectronics/rally/backend/internal/config"
+	"github.com/AGlElectronics/rally/backend/internal/groupmatch"
 )
 
 // OIDCVerifier wraps the go-oidc verifier and exposes the subset of token
@@ -17,25 +18,29 @@ import (
 type OIDCVerifier struct {
 	verifier *oidc.IDTokenVerifier
 	issuer   string
+	// groups reads the person's groups from the token (staff only); nil
+	// means groups are ignored, which is how attendee tokens are handled.
+	groups *groupmatch.Config
 }
 
-// OIDCClaims is the parsed claim subset Rally stores. We try the standard
-// claim names first and fall back to common Keycloak shapes.
+// OIDCClaims is the parsed claim subset Rally stores.
 type OIDCClaims struct {
-	Issuer            string   `json:"iss"`
-	Subject           string   `json:"sub"`
-	Email             string   `json:"email"`
-	EmailVerified     bool     `json:"email_verified"`
-	PreferredUsername string   `json:"preferred_username"`
-	Name              string   `json:"name"`
-	Nickname          string   `json:"nickname"`
-	Groups            []string `json:"groups"`
-	Roles             []string `json:"roles"`
+	Issuer            string `json:"iss"`
+	Subject           string `json:"sub"`
+	Email             string `json:"email"`
+	EmailVerified     bool   `json:"email_verified"`
+	PreferredUsername string `json:"preferred_username"`
+	Name              string `json:"name"`
+	Nickname          string `json:"nickname"`
+	// Groups come only from the claim named by OIDC_GROUPS_CLAIM (shared
+	// groupmatch rule); the "roles" claim is never merged in. Always empty
+	// for attendees.
+	Groups []string `json:"-"`
 }
 
 // NewOIDCVerifier runs OIDC discovery and returns a verifier configured for
-// Rally's audience. Call once at startup; the returned object is safe for
-// concurrent use.
+// Rally's staff audience. Call once at startup; the returned object is safe
+// for concurrent use.
 func NewOIDCVerifier(ctx context.Context, cfg *config.Config) (*OIDCVerifier, error) {
 	if cfg.OIDCIssuerURL == "" || cfg.OIDCClientID == "" {
 		return nil, errors.New("OIDC verifier requires OIDC_ISSUER_URL and OIDC_CLIENT_ID")
@@ -44,12 +49,18 @@ func NewOIDCVerifier(ctx context.Context, cfg *config.Config) (*OIDCVerifier, er
 	if audience == "" {
 		audience = cfg.OIDCClientID
 	}
-	return NewOIDCVerifierFor(ctx, cfg.OIDCIssuerURL, audience)
+	v, err := NewOIDCVerifierFor(ctx, cfg.OIDCIssuerURL, audience)
+	if err != nil {
+		return nil, err
+	}
+	groups := cfg.Groups
+	v.groups = &groups
+	return v, nil
 }
 
-// NewOIDCVerifierFor builds a verifier for one issuer and audience. Staff and
-// attendees each get their own, so a token from one realm never passes the
-// other's checks.
+// NewOIDCVerifierFor builds a verifier for one issuer and audience that
+// ignores group claims. Staff and attendees each get their own, so a token
+// from one realm never passes the other's checks.
 func NewOIDCVerifierFor(ctx context.Context, issuer, audience string) (*OIDCVerifier, error) {
 	provider, err := oidc.NewProvider(ctx, issuer)
 	if err != nil {
@@ -84,24 +95,12 @@ func (v *OIDCVerifier) Verify(ctx context.Context, bearer string) (*OIDCClaims, 
 	// token issuers include trailing /realm paths; always use what we
 	// trust, not what the token asserts.
 	c.Issuer = v.issuer
-	// Many IdPs expose `roles` rather than `groups`; treat both as role-ish
-	// strings for the access config binding lookup.
-	c.Groups = mergeUnique(c.Groups, c.Roles)
-	return &c, nil
-}
-
-func mergeUnique(a, b []string) []string {
-	seen := map[string]struct{}{}
-	out := make([]string, 0, len(a)+len(b))
-	for _, v := range append(append([]string{}, a...), b...) {
-		if v == "" {
-			continue
+	if v.groups != nil {
+		var raw map[string]any
+		if err := idToken.Claims(&raw); err != nil {
+			return nil, fmt.Errorf("parse claims: %w", err)
 		}
-		if _, ok := seen[v]; ok {
-			continue
-		}
-		seen[v] = struct{}{}
-		out = append(out, v)
+		c.Groups = v.groups.Groups(raw)
 	}
-	return out
+	return &c, nil
 }

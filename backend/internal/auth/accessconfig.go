@@ -9,6 +9,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/AGlElectronics/rally/backend/internal/domain"
+	"github.com/AGlElectronics/rally/backend/internal/groupmatch"
 )
 
 // AccessConfig is the in-memory snapshot of the role/permission catalog and
@@ -22,9 +23,10 @@ type AccessConfig struct {
 }
 
 // GroupBinding grants Role organization-wide in Organization (a slug) to
-// everyone whose token carries Group.
+// everyone whose token carries Group. Group.Stored is the normalised name
+// compared with groupmatch; Group.Display is the name as written in the file.
 type GroupBinding struct {
-	Group        string
+	Group        groupmatch.Grant
 	Role         string
 	Organization string
 }
@@ -82,28 +84,20 @@ func (c *AccessConfig) Bindings() []GroupBinding {
 	return append([]GroupBinding(nil), c.bindings...)
 }
 
-// BindingsFor returns the bindings matching any of the token's groups.
-// Groups compare case-insensitively and ignore a leading "/" (Keycloak's
-// full-path form).
-func (c *AccessConfig) BindingsFor(groups []string) []GroupBinding {
+// BindingsFor returns the bindings matching any of the token's groups,
+// compared with the shared groupmatch rule (OIDC_GROUP_MATCH,
+// OIDC_GROUP_PREFIX).
+func (c *AccessConfig) BindingsFor(match groupmatch.Config, groups []string) []GroupBinding {
 	if c == nil || len(groups) == 0 {
 		return nil
 	}
-	have := map[string]struct{}{}
-	for _, g := range groups {
-		have[normalizeGroup(g)] = struct{}{}
-	}
 	var out []GroupBinding
 	for _, b := range c.bindings {
-		if _, ok := have[normalizeGroup(b.Group)]; ok {
+		if match.Match(groups, b.Group.Stored) {
 			out = append(out, b)
 		}
 	}
 	return out
-}
-
-func normalizeGroup(g string) string {
-	return strings.ToLower(strings.TrimPrefix(strings.TrimSpace(g), "/"))
 }
 
 type accessFile struct {
@@ -185,7 +179,11 @@ func parseAccessConfig(data []byte) (*AccessConfig, error) {
 		if _, ok := rolePerms[b.Role]; !ok {
 			return nil, fmt.Errorf("bindings[%d]: group %q references unknown role %q", i, b.Group, b.Role)
 		}
-		bindings = append(bindings, GroupBinding{Group: b.Group, Role: b.Role, Organization: org})
+		grant := groupmatch.NewGrant(b.Group)
+		if grant.Stored == "" {
+			return nil, fmt.Errorf("bindings[%d]: group %q is empty after normalising", i, b.Group)
+		}
+		bindings = append(bindings, GroupBinding{Group: grant, Role: b.Role, Organization: org})
 	}
 
 	return &AccessConfig{rolePerms: rolePerms, roleDesc: roleDesc, bindings: bindings}, nil

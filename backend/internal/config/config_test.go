@@ -22,6 +22,9 @@ func baseEnv(t *testing.T) {
 		"PUBLIC_RATE_BURST":        "",
 		"SUBMISSION_RATE_LIMIT":    "",
 		"SUBMISSION_RATE_BURST":    "",
+		"OIDC_GROUPS_CLAIM":        "",
+		"OIDC_GROUP_MATCH":         "",
+		"OIDC_GROUP_PREFIX":        "",
 	} {
 		t.Setenv(k, v)
 	}
@@ -87,6 +90,30 @@ func TestLoadRequiresDenKeyOutsideDevelopment(t *testing.T) {
 	t.Setenv("DEN_LINK_ENCRYPTION_KEY", "not-a-key")
 	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "DEN_LINK_ENCRYPTION_KEY") {
 		t.Fatalf("err = %v, want a bad-key error", err)
+	}
+}
+
+func TestLoadGroupMatching(t *testing.T) {
+	baseEnv(t)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Groups.ClaimName() != "groups" || cfg.Groups.Mode != "full" {
+		t.Fatalf("default Groups = %+v", cfg.Groups)
+	}
+	t.Setenv("OIDC_GROUPS_CLAIM", "realm_access.roles")
+	t.Setenv("OIDC_GROUP_MATCH", "last")
+	t.Setenv("OIDC_GROUP_PREFIX", "/con2026")
+	if cfg, err = Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Groups.Claim != "realm_access.roles" || cfg.Groups.Mode != "last" || cfg.Groups.Prefix != "/con2026" {
+		t.Fatalf("Groups = %+v", cfg.Groups)
+	}
+	t.Setenv("OIDC_GROUP_MATCH", "suffix")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "OIDC_GROUP_MATCH") {
+		t.Fatalf("err = %v, want an OIDC_GROUP_MATCH error", err)
 	}
 }
 
