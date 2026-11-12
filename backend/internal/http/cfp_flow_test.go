@@ -2,35 +2,25 @@ package http_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 
 	"github.com/AGlElectronics/rally/backend/internal/auth"
 	"github.com/AGlElectronics/rally/backend/internal/brand"
 	"github.com/AGlElectronics/rally/backend/internal/config"
+	"github.com/AGlElectronics/rally/backend/internal/dbtest"
 	rallyhttp "github.com/AGlElectronics/rally/backend/internal/http"
 )
 
 // Happy path: open CfP → draft submission → submit → accept (different user).
-// Requires RALLY_TEST_DATABASE_URL with migrations applied (incl. CfP).
+// The edition is the one the init migration seeds. Each run adds its own
+// call and submission, so rows left by an earlier run do not matter.
 func TestCfPSubmissionAcceptFlow(t *testing.T) {
-	dsn := os.Getenv("RALLY_TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("RALLY_TEST_DATABASE_URL not set")
-	}
-	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		t.Fatalf("pool: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool := dbtest.Pool(t)
 
 	cfg := &config.Config{
 		AppEnv:             "development",

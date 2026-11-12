@@ -10,31 +10,22 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 
 	"github.com/AGlElectronics/rally/backend/internal/auth"
 	"github.com/AGlElectronics/rally/backend/internal/brand"
 	"github.com/AGlElectronics/rally/backend/internal/config"
+	"github.com/AGlElectronics/rally/backend/internal/dbtest"
 	"github.com/AGlElectronics/rally/backend/internal/events"
 	rallyhttp "github.com/AGlElectronics/rally/backend/internal/http"
 )
 
 func TestPublicScheduleAPIKeys(t *testing.T) {
-	dsn := os.Getenv("RALLY_TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("RALLY_TEST_DATABASE_URL not set")
-	}
+	pool := dbtest.Pool(t)
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		t.Fatalf("pool: %v", err)
-	}
-	t.Cleanup(pool.Close)
-	// Leftovers from earlier runs would break the "no key = 401" checks.
+	// This test counts keys, so it clears its own rows. The schema stays.
 	if _, err := pool.Exec(ctx, `DELETE FROM public_api_keys`); err != nil {
 		t.Fatalf("clean keys: %v", err)
 	}

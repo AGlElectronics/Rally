@@ -14,6 +14,7 @@ import (
 
 	"github.com/AGlElectronics/rally/backend/internal/auth"
 	"github.com/AGlElectronics/rally/backend/internal/config"
+	"github.com/AGlElectronics/rally/backend/internal/dbtest"
 	"github.com/AGlElectronics/rally/backend/internal/denlink"
 	"github.com/AGlElectronics/rally/backend/internal/groupmatch"
 	"github.com/AGlElectronics/rally/backend/internal/oidctest"
@@ -121,15 +122,7 @@ func TestRoleCatalogNeedsServiceTokenOrStaff(t *testing.T) {
 }
 
 func TestRoleCatalogStaffSignIn(t *testing.T) {
-	dsn := os.Getenv("RALLY_TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("RALLY_TEST_DATABASE_URL not set")
-	}
-	pool, err := pgxpool.New(context.Background(), dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := dbtest.Pool(t)
 	router, idp := catalogRouter(t, pool)
 	// A staff member without any role may read it: it names roles, not people.
 	tok := idp.Token("staff", map[string]any{"sub": "catalog-reader", "aud": "events-api", "name": "Catalog Reader"})
