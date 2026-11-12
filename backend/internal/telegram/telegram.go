@@ -59,7 +59,7 @@ func (c *Client) Send(ctx context.Context, chatID, text string) error {
 		// The URL carries the token; never surface it.
 		return fmt.Errorf("telegram unreachable")
 	}
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 	var out struct {
 		OK          bool   `json:"ok"`
 		Description string `json:"description"`

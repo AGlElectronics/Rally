@@ -317,7 +317,7 @@ func toRuleItems(items []ScheduleItem) []ruleItem {
 		ri := ruleItem{ID: it.ID, Title: it.Title, RoomID: it.RoomID, EventTypeID: it.EventTypeID,
 			Start: it.StartsAt, End: it.EndsAt, Cancelled: it.Status == "cancelled"}
 		for _, p := range it.People {
-			ri.People = append(ri.People, rulePerson{UserID: p.UserID, Name: p.Name})
+			ri.People = append(ri.People, rulePerson(p))
 		}
 		out = append(out, ri)
 	}
