@@ -2,10 +2,15 @@ version: "2"
 run:
   timeout: 5m
   tests: true
+# golangci-lint v2 classifies gofmt as a formatter. Listing it under
+# linters.enable makes the binary refuse the config ("gofmt is a formatter",
+# exit code 3) before any check runs.
+formatters:
+  enable:
+    - gofmt
 linters:
   default: standard
   enable:
-    - gofmt
     - govet
     - ineffassign
     - staticcheck
