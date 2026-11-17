@@ -37,7 +37,8 @@
 // attendee issuer, never the staff one:
 //
 //	GET /api/public/v1/calls[/{cfp}]  — open calls (unauthenticated)
-//	GET /api/public/v1/schedules[/{edition}[/calendar.ics]] — published programme
+//	GET /api/public/v1/schedules[/{edition}[/calendar.ics|/signage]] — published programme / signage
+//	GET /api/public/v1/schedules/{edition}/rooms/{room}/signage — one-room now/next
 //	    (unauthenticated; 404 unless switched on in Den or PUBLIC_SCHEDULE_ENABLED)
 //	GET /api/public/v1/me             — attendee profile + presenter code
 //	GET /api/public/v1/submissions    — mine (submitter or co-presenter)
@@ -55,6 +56,7 @@ package http
 
 import (
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -74,6 +76,7 @@ import (
 	"github.com/AGlElectronics/rally/backend/internal/events"
 	"github.com/AGlElectronics/rally/backend/internal/files"
 	"github.com/AGlElectronics/rally/backend/internal/telegram"
+	"github.com/AGlElectronics/rally/backend/internal/tgcatchall"
 )
 
 // Deps groups the runtime dependencies the HTTP layer needs. Files is
@@ -158,7 +161,8 @@ func NewRouter(deps Deps, version string) http.Handler {
 	sched := &scheduleHandler{
 		rooms: events.NewRoomService(deps.Pool),
 		svc: events.NewScheduleService(deps.Pool,
-			telegram.New(deps.Config.TelegramBotToken, deps.Config.TelegramAPIURL),
+			telegram.New(deps.Config.TelegramBotToken, deps.Config.TelegramAPIURL,
+				tgcatchall.New(tgcatchall.FromEnv(os.Getenv))),
 			publicScheduleSwitch(den, deps.Config.PublicScheduleEnabled)),
 		productName: func() string {
 			if n := den.OrganizationName(); n != "" {
@@ -167,6 +171,7 @@ func NewRouter(deps Deps, version string) http.Handler {
 			return "Rally"
 		},
 	}
+	tagsH := &tagsHandler{svc: events.NewTagService(deps.Pool)}
 	attendeeMW := auth.AttendeeMiddleware(deps.Config, resolver, deps.AttendeeVerifier)
 	keySvc := deps.Keys
 	if keySvc == nil {
@@ -189,6 +194,7 @@ func NewRouter(deps Deps, version string) http.Handler {
 		api.Get("/health", health.get)
 		api.With(requireCatalogReader(deps.Config.HRServiceToken, deps.Config.DevAuth(), authMW)).
 			Get("/role-catalog", roleCatalogHandler(deps.Access))
+		api.Get("/internal/stats", internalStatsHandler(deps.Config.StatsPullToken, deps.Pool))
 		api.Get("/den/state", den.StateHandler)
 
 		// Public submission site. Only attendee-realm tokens work here, and
@@ -208,6 +214,8 @@ func NewRouter(deps Deps, version string) http.Handler {
 				ps.Get("/schedules", sched.publicList)
 				ps.Get("/schedules/{edition}", sched.publicSchedule)
 				ps.Get("/schedules/{edition}/calendar.ics", sched.publicICS)
+				ps.Get("/schedules/{edition}/signage", sched.publicSignage)
+				ps.Get("/schedules/{edition}/rooms/{room}/signage", sched.publicRoomSignage)
 			})
 			pub.Group(func(a chi.Router) {
 				a.Use(attendeeMW)
@@ -279,6 +287,8 @@ func NewRouter(deps Deps, version string) http.Handler {
 					ed.Get("/schedule/versions/{version}", sched.version)
 					ed.Post("/schedule/versions/{version}/restore", sched.restore)
 					ed.Post("/schedule/live/{item}", sched.live)
+					ed.Get("/tags", tagsH.listForEdition)
+					ed.With(requirePermission(domain.PermScheduleEdit)).Post("/tags", tagsH.propose)
 					ed.Get("/announcements", sched.announcements)
 					ed.Post("/announcements", sched.createAnnouncement)
 					ed.Get("/telegram-chats", sched.chats)
@@ -288,6 +298,11 @@ func NewRouter(deps Deps, version string) http.Handler {
 				secure.Delete("/rooms/{room}", sched.deleteRoom)
 				secure.Patch("/schedule-items/{item}", sched.updateItem)
 				secure.Delete("/schedule-items/{item}", sched.deleteItem)
+				secure.Get("/schedule-items/{item}/revisions", sched.listItemRevisions)
+				secure.Get("/schedule-items/{item}/revisions/{revision}", sched.getItemRevision)
+				secure.With(requirePermission(domain.PermTagApprove)).Post("/tags/{tag}/approve", tagsH.approve)
+				secure.With(requirePermission(domain.PermTagApprove)).Post("/tags/{tag}/reject", tagsH.reject)
+				secure.With(requirePermission(domain.PermTagApprove)).Delete("/tags/{tag}", tagsH.delete)
 				secure.Put("/announcements/{announcement}", sched.updateAnnouncement)
 				secure.Post("/announcements/{announcement}/send", sched.sendAnnouncement)
 				secure.Post("/announcements/{announcement}/discard", sched.discardAnnouncement)

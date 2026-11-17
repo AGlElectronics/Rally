@@ -32,6 +32,7 @@ var privilegedPermissions = []string{
 	domain.PermMemberView, domain.PermMemberManage, domain.PermAuditView,
 	domain.PermCfPManage, domain.PermSubmissionReview, domain.PermSubmissionDecide,
 	domain.PermSchedulePublish,
+	domain.PermTagApprove,
 }
 
 // Privileged reports whether role is an admin-type role for HR: the file's

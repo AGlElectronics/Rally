@@ -448,6 +448,14 @@ function ApiKeys() {
   );
 }
 
+function parseTopicId(raw: string): number | null | undefined {
+  const t = raw.trim();
+  if (!t) return null;
+  const n = Number(t);
+  if (!Number.isInteger(n) || n <= 0) return undefined;
+  return n;
+}
+
 function ChatsCard({ schedule: sc }: { schedule: Schedule }) {
   const qc = useQueryClient();
   const key = ['telegram-chats', sc.edition.id];
@@ -455,11 +463,21 @@ function ChatsCard({ schedule: sc }: { schedule: Schedule }) {
   const refresh = () => void qc.invalidateQueries({ queryKey: key });
   const [name, setName] = useState('');
   const [chatId, setChatId] = useState('');
+  const [topicId, setTopicId] = useState('');
+  const parsedTopic = parseTopicId(topicId);
+  const topicInvalid = topicId.trim() !== '' && parsedTopic === undefined;
   const add = useMutation({
-    mutationFn: () => createChat(sc.edition.id, { name: name.trim(), chat_id: chatId.trim(), enabled: true }),
+    mutationFn: () =>
+      createChat(sc.edition.id, {
+        name: name.trim(),
+        chat_id: chatId.trim(),
+        message_thread_id: parsedTopic ?? null,
+        enabled: true,
+      }),
     onSuccess: () => {
       setName('');
       setChatId('');
+      setTopicId('');
       refresh();
     },
   });
@@ -476,6 +494,7 @@ function ChatsCard({ schedule: sc }: { schedule: Schedule }) {
             ? 'Confirmed announcements are posted to the enabled chats below.'
             : 'Set TELEGRAM_BOT_TOKEN on the events backend to post for real. Until then, sending only records the message.'}{' '}
           Add the bot to each channel or group, then enter its chat id (like <code>-1001234567890</code> or <code>@channel</code>).
+          For a forum topic, also set the topic id from a link such as <code>t.me/c/…/599</code> (the last number).
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
@@ -486,15 +505,24 @@ function ChatsCard({ schedule: sc }: { schedule: Schedule }) {
           className="flex flex-wrap items-center gap-2 border-t border-border pt-3"
           onSubmit={(e) => {
             e.preventDefault();
-            if (name.trim() && chatId.trim()) add.mutate();
+            if (name.trim() && chatId.trim() && !topicInvalid) add.mutate();
           }}
         >
           <Input aria-label="Chat name" className="min-w-32 flex-1" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
           <Input aria-label="Chat id" className="min-w-32 flex-1" placeholder="Chat id" value={chatId} onChange={(e) => setChatId(e.target.value)} />
-          <Button size="sm" type="submit" disabled={!name.trim() || !chatId.trim() || add.isPending}>
+          <Input
+            aria-label="Topic id"
+            className="min-w-24 w-28"
+            placeholder="Topic id"
+            inputMode="numeric"
+            value={topicId}
+            onChange={(e) => setTopicId(e.target.value)}
+          />
+          <Button size="sm" type="submit" disabled={!name.trim() || !chatId.trim() || topicInvalid || add.isPending}>
             <Plus className="h-3.5 w-3.5" />
             Add chat
           </Button>
+          {topicInvalid ? <p className="w-full text-xs text-destructive">Topic id must be a positive number (or leave blank).</p> : null}
           {add.error ? <p className="w-full text-xs text-destructive">{errorText(add.error)}</p> : null}
         </form>
       </CardContent>
@@ -504,16 +532,26 @@ function ChatsCard({ schedule: sc }: { schedule: Schedule }) {
 
 function ChatRow({ chat, onDone }: { chat: TelegramChat; onDone: () => void }) {
   const toggle = useMutation({
-    mutationFn: () => updateChat(chat.id, { name: chat.name, chat_id: chat.chat_id, enabled: !chat.enabled }),
+    mutationFn: () =>
+      updateChat(chat.id, {
+        name: chat.name,
+        chat_id: chat.chat_id,
+        message_thread_id: chat.message_thread_id ?? null,
+        enabled: !chat.enabled,
+      }),
     onSuccess: onDone,
   });
   const del = useMutation({ mutationFn: () => deleteChat(chat.id), onSuccess: onDone });
+  const target =
+    chat.message_thread_id != null
+      ? `${chat.chat_id} · topic ${chat.message_thread_id}`
+      : chat.chat_id;
   return (
     <div className="flex items-center gap-2 text-sm">
       <label className="flex min-w-0 flex-1 items-center gap-2">
         <input type="checkbox" className="accent-primary" checked={chat.enabled} disabled={toggle.isPending} onChange={() => toggle.mutate()} />
         <span className="font-medium">{chat.name}</span>
-        <code className="truncate text-xs text-muted-foreground">{chat.chat_id}</code>
+        <code className="truncate text-xs text-muted-foreground">{target}</code>
       </label>
       <Button
         size="icon"

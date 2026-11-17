@@ -26,6 +26,13 @@ type ScheduleSettings struct {
 	DayEndMinute   int                 `json:"day_end_minute"`
 	SnapMinutes    int                 `json:"snap_minutes"`
 	Rules          map[string]RuleMode `json:"rules"`
+	// Preview window (read-only draft viewing). Nil opens_at means closed
+	// until staff set a window. PublicURL is what Den quick-links can use.
+	PreviewOpensAt  *time.Time `json:"preview_opens_at,omitempty"`
+	PreviewClosesAt *time.Time `json:"preview_closes_at,omitempty"`
+	PreviewPublicURL string    `json:"preview_public_url,omitempty"`
+	// PreviewOpen is true when now is inside the configured window.
+	PreviewOpen bool `json:"preview_open"`
 }
 
 // SchedulePerson is someone presenting an item.
@@ -47,6 +54,7 @@ type ScheduleItem struct {
 	StaffOnly    bool             `json:"staff_only"`
 	Status       string           `json:"status"`
 	People       []SchedulePerson `json:"people"`
+	Tags         []ItemTag        `json:"tags"`
 	UpdatedAt    time.Time        `json:"updated_at"`
 }
 
@@ -140,13 +148,16 @@ func lockSchedule(ctx context.Context, tx pgx.Tx, orgID, editionID uuid.UUID) (S
 
 func readSettings(ctx context.Context, q querier, editionID uuid.UUID, forUpdate bool) (ScheduleSettings, *time.Time, error) {
 	st := ScheduleSettings{DayStartMinute: 540, DayEndMinute: 1380, SnapMinutes: 15, Rules: DefaultRules()}
-	sql := `SELECT day_start_minute, day_end_minute, snap_minutes, rules, draft_updated_at FROM schedules WHERE edition_id=$1`
+	sql := `SELECT day_start_minute, day_end_minute, snap_minutes, rules, draft_updated_at,
+		preview_opens_at, preview_closes_at, COALESCE(preview_public_url, '')
+		FROM schedules WHERE edition_id=$1`
 	if forUpdate {
 		sql += ` FOR UPDATE`
 	}
 	var raw []byte
 	var draftAt *time.Time
-	err := q.QueryRow(ctx, sql, editionID).Scan(&st.DayStartMinute, &st.DayEndMinute, &st.SnapMinutes, &raw, &draftAt)
+	err := q.QueryRow(ctx, sql, editionID).Scan(&st.DayStartMinute, &st.DayEndMinute, &st.SnapMinutes, &raw, &draftAt,
+		&st.PreviewOpensAt, &st.PreviewClosesAt, &st.PreviewPublicURL)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return st, nil, nil
 	}
@@ -158,6 +169,12 @@ func readSettings(ctx context.Context, q querier, editionID uuid.UUID, forUpdate
 	for k, v := range stored {
 		if _, known := st.Rules[k]; known {
 			st.Rules[k] = v
+		}
+	}
+	now := time.Now().UTC()
+	if st.PreviewOpensAt != nil && !now.Before(st.PreviewOpensAt.UTC()) {
+		if st.PreviewClosesAt == nil || now.Before(st.PreviewClosesAt.UTC()) {
+			st.PreviewOpen = true
 		}
 	}
 	return st, draftAt, nil
@@ -173,6 +190,7 @@ func scanItem(row pgx.Row) (*ScheduleItem, error) {
 	switch {
 	case err == nil:
 		it.People = []SchedulePerson{}
+		it.Tags = []ItemTag{}
 		return &it, nil
 	case errors.Is(err, pgx.ErrNoRows):
 		return nil, httperror.NotFound("schedule item")
@@ -239,6 +257,19 @@ func listItems(ctx context.Context, q querier, editionID uuid.UUID) ([]ScheduleI
 			if ps := people[*items[i].SubmissionID]; ps != nil {
 				items[i].People = ps
 			}
+		}
+	}
+	itemIDs := make([]uuid.UUID, len(items))
+	for i := range items {
+		itemIDs[i] = items[i].ID
+	}
+	tags, err := tagsForItems(ctx, q, itemIDs)
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		if ts := tags[items[i].ID]; ts != nil {
+			items[i].Tags = ts
 		}
 	}
 	return items, nil
@@ -413,6 +444,12 @@ func (s *ScheduleService) UpdateSettings(ctx context.Context, editionID uuid.UUI
 		}
 		rules[k] = v
 	}
+	if in.PreviewOpensAt != nil && in.PreviewClosesAt != nil && !in.PreviewOpensAt.Before(*in.PreviewClosesAt) {
+		issues["preview_closes_at"] = "must be after preview_opens_at"
+	}
+	if len(in.PreviewPublicURL) > 500 {
+		issues["preview_public_url"] = "at most 500 characters"
+	}
 	if err := validationIfAny("invalid schedule settings", issues); err != nil {
 		return nil, err
 	}
@@ -423,7 +460,9 @@ func (s *ScheduleService) UpdateSettings(ctx context.Context, editionID uuid.UUI
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE schedules SET day_start_minute=$2, day_end_minute=$3, snap_minutes=$4,
-			rules=$5, updated_at=now() WHERE edition_id=$1`, editionID, in.DayStartMinute, in.DayEndMinute, in.SnapMinutes, raw); err != nil {
+			rules=$5, preview_opens_at=$6, preview_closes_at=$7, preview_public_url=$8, updated_at=now()
+			WHERE edition_id=$1`, editionID, in.DayStartMinute, in.DayEndMinute, in.SnapMinutes, raw,
+			in.PreviewOpensAt, in.PreviewClosesAt, strings.TrimSpace(in.PreviewPublicURL)); err != nil {
 			return httperror.Internal(err)
 		}
 		if err := audit.Record(ctx, tx, orgID, &editionID, "schedule.settings", string(domain.ResourceSchedule),
@@ -459,6 +498,8 @@ func (o *optionalUUID) UnmarshalJSON(b []byte) error {
 // ItemInput creates (POST) or changes (PATCH) an item. On create either
 // SubmissionID or Title is required, plus RoomID and StartsAt; the length
 // comes from EndsAt, DurationMinutes, the event type or 60 minutes.
+// TagIDs on PATCH replaces the item's tag list when non-nil; `[]` clears
+// it. Only approved tags of the edition's organisation are accepted.
 type ItemInput struct {
 	SubmissionID    *uuid.UUID   `json:"submission_id"`
 	Title           *string      `json:"title"`
@@ -469,6 +510,7 @@ type ItemInput struct {
 	EndsAt          *time.Time   `json:"ends_at"`
 	DurationMinutes *int         `json:"duration_minutes"`
 	StaffOnly       *bool        `json:"staff_only"`
+	TagIDs          *[]uuid.UUID `json:"tag_ids"`
 }
 
 // blockedError refuses a change that breaks a blocking rule.
@@ -680,6 +722,14 @@ func (s *ScheduleService) CreateItem(ctx context.Context, editionID uuid.UUID, i
 		if err != nil {
 			return err
 		}
+		if in.TagIDs != nil {
+			if err := setScheduleItemTags(ctx, tx, orgID, it.ID, *in.TagIDs); err != nil {
+				return err
+			}
+			if it.Tags, err = listScheduleItemTags(ctx, tx, it.ID); err != nil {
+				return err
+			}
+		}
 		if err := checkDraft(ctx, tx, editionID, st, map[uuid.UUID]bool{it.ID: true}); err != nil {
 			return err
 		}
@@ -688,6 +738,9 @@ func (s *ScheduleService) CreateItem(ctx context.Context, editionID uuid.UUID, i
 		}
 		if err := audit.Record(ctx, tx, orgID, &editionID, "schedule_item.create",
 			string(domain.ResourceScheduleItem), it.ID, nil, it, ""); err != nil {
+			return err
+		}
+		if err := recordRevision(ctx, tx, orgID, editionID, it.ID, RevisionCreate, "", nil, it); err != nil {
 			return err
 		}
 		out, err = s.load(ctx, tx, editionID)
@@ -727,6 +780,9 @@ func (s *ScheduleService) UpdateItem(ctx context.Context, id uuid.UUID, in ItemI
 		}
 		before, err := scanItem(tx.QueryRow(ctx, `SELECT `+itemColumns+` FROM schedule_items WHERE id=$1 FOR UPDATE`, id))
 		if err != nil {
+			return err
+		}
+		if before.Tags, err = listScheduleItemTags(ctx, tx, id); err != nil {
 			return err
 		}
 		after := *before
@@ -774,6 +830,14 @@ func (s *ScheduleService) UpdateItem(ctx context.Context, id uuid.UUID, in ItemI
 			id, after.RoomID, after.EventTypeID, after.Title, after.Description, after.StartsAt, after.EndsAt, after.StaffOnly); err != nil {
 			return httperror.Internal(err)
 		}
+		if in.TagIDs != nil {
+			if err := setScheduleItemTags(ctx, tx, orgID, id, *in.TagIDs); err != nil {
+				return err
+			}
+		}
+		if after.Tags, err = listScheduleItemTags(ctx, tx, id); err != nil {
+			return err
+		}
 		if err := checkDraft(ctx, tx, editionID, st, map[uuid.UUID]bool{id: true}); err != nil {
 			return err
 		}
@@ -782,6 +846,9 @@ func (s *ScheduleService) UpdateItem(ctx context.Context, id uuid.UUID, in ItemI
 		}
 		if err := audit.Record(ctx, tx, orgID, &editionID, "schedule_item.update",
 			string(domain.ResourceScheduleItem), id, before, after, ""); err != nil {
+			return err
+		}
+		if err := recordRevision(ctx, tx, orgID, editionID, id, RevisionUpdate, "", before, after); err != nil {
 			return err
 		}
 		out, err = s.load(ctx, tx, editionID)
@@ -809,6 +876,9 @@ func (s *ScheduleService) DeleteItem(ctx context.Context, id uuid.UUID) (*Schedu
 		if err != nil {
 			return err
 		}
+		if before.Tags, err = listScheduleItemTags(ctx, tx, id); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(ctx, `UPDATE announcements SET item_id=NULL WHERE item_id=$1`, id); err != nil {
 			return httperror.Internal(err)
 		}
@@ -820,6 +890,9 @@ func (s *ScheduleService) DeleteItem(ctx context.Context, id uuid.UUID) (*Schedu
 		}
 		if err := audit.Record(ctx, tx, orgID, &editionID, "schedule_item.delete",
 			string(domain.ResourceScheduleItem), id, before, nil, ""); err != nil {
+			return err
+		}
+		if err := recordRevision(ctx, tx, orgID, editionID, id, RevisionDelete, "", before, nil); err != nil {
 			return err
 		}
 		out, err = s.load(ctx, tx, editionID)

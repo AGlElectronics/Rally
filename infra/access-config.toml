@@ -13,6 +13,7 @@
 #   Audit:        audit.view
 #   CfP:          cfp.manage  submission.review  submission.decide
 #   Schedule:     schedule.edit  schedule.publish
+#   Tags:         tag.approve
 #
 # A role listed here replaces its built-in permission set entirely.
 #
@@ -42,6 +43,7 @@ permissions = [
   "audit.view",
   "cfp.manage", "submission.review", "submission.decide",
   "schedule.edit", "schedule.publish",
+  "tag.approve",
 ]
 
 [roles.edition_organizer]
@@ -52,6 +54,7 @@ permissions = [
   "member.view", "audit.view",
   "cfp.manage", "submission.review", "submission.decide",
   "schedule.edit", "schedule.publish",
+  "tag.approve",
 ]
 
 [roles.programme_manager]
@@ -60,6 +63,7 @@ permissions = [
   "org.view", "edition.view", "member.view",
   "submission.review", "submission.decide",
   "schedule.edit", "schedule.publish",
+  "tag.approve",
 ]
 
 [roles.reviewer]

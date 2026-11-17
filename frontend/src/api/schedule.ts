@@ -143,8 +143,18 @@ export type LiveResult = {
   announcement: Announcement | null;
 };
 
-export type TelegramChat = { id: string; edition_id: string; name: string; chat_id: string; enabled: boolean };
-export type TelegramChatInput = Pick<TelegramChat, 'name' | 'chat_id' | 'enabled'>;
+export type TelegramChat = {
+  id: string;
+  edition_id: string;
+  name: string;
+  chat_id: string;
+  /** Forum topic id; omit or null for the whole chat / General. */
+  message_thread_id?: number | null;
+  enabled: boolean;
+};
+export type TelegramChatInput = Pick<TelegramChat, 'name' | 'chat_id' | 'enabled'> & {
+  message_thread_id?: number | null;
+};
 
 type List<T> = { items: T[] };
 

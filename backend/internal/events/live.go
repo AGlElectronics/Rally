@@ -211,9 +211,19 @@ func (s *ScheduleService) Live(ctx context.Context, editionID, itemID uuid.UUID,
 			if !changed[it.ID] {
 				continue
 			}
+			var before ScheduleItem
+			for i := range cur.Data.Items {
+				if cur.Data.Items[i].ID == it.ID {
+					before = cur.Data.Items[i]
+					break
+				}
+			}
 			if _, err := tx.Exec(ctx, `UPDATE schedule_items SET room_id=$2, starts_at=$3, ends_at=$4, status=$5, updated_at=now()
 				WHERE id=$1 AND edition_id=$6`, it.ID, it.RoomID, it.StartsAt, it.EndsAt, it.Status, editionID); err != nil {
 				return httperror.Internal(err)
+			}
+			if err := recordRevision(ctx, tx, orgID, editionID, it.ID, RevisionLive, note, before, it); err != nil {
+				return err
 			}
 		}
 		if err := audit.Record(ctx, tx, orgID, &editionID, "schedule.live."+in.Action, string(domain.ResourceScheduleItem),
@@ -424,7 +434,7 @@ func (s *ScheduleService) SendAnnouncement(ctx context.Context, id uuid.UUID) (*
 				continue
 			}
 			r := sendResult{Chat: c.Name, DryRun: !s.tg.Configured()}
-			if err := s.tg.Send(ctx, c.ChatID, a.Body); err != nil {
+			if err := s.tg.Send(ctx, c.ChatID, a.Body, c.MessageThreadID); err != nil {
 				r.Error = err.Error()
 			} else {
 				r.OK, sentAny = true, true
@@ -456,21 +466,23 @@ func (s *ScheduleService) SendAnnouncement(ctx context.Context, id uuid.UUID) (*
 	return out, wrapTxErr(err)
 }
 
-// TelegramChat is a chat or channel the bot posts announcements to.
+// TelegramChat is a chat, channel, or forum topic the bot posts announcements to.
 type TelegramChat struct {
-	ID        uuid.UUID `json:"id"`
-	EditionID uuid.UUID `json:"edition_id"`
-	Name      string    `json:"name"`
-	ChatID    string    `json:"chat_id"`
-	Enabled   bool      `json:"enabled"`
-	CreatedAt time.Time `json:"created_at"`
+	ID              uuid.UUID `json:"id"`
+	EditionID       uuid.UUID `json:"edition_id"`
+	Name            string    `json:"name"`
+	ChatID          string    `json:"chat_id"`
+	MessageThreadID *int64    `json:"message_thread_id,omitempty"`
+	Enabled         bool      `json:"enabled"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 // TelegramChatInput is the create/replace payload.
 type TelegramChatInput struct {
-	Name    string `json:"name"`
-	ChatID  string `json:"chat_id"`
-	Enabled bool   `json:"enabled"`
+	Name            string `json:"name"`
+	ChatID          string `json:"chat_id"`
+	MessageThreadID *int64 `json:"message_thread_id"`
+	Enabled         bool   `json:"enabled"`
 }
 
 func (in *TelegramChatInput) normalize() error {
@@ -484,14 +496,19 @@ func (in *TelegramChatInput) normalize() error {
 	} else if len(in.ChatID) > 100 || strings.ContainsAny(in.ChatID, " \t\n") {
 		issues["chat_id"] = "doesn't look like a Telegram chat id"
 	}
+	if in.MessageThreadID != nil {
+		if *in.MessageThreadID <= 0 {
+			issues["message_thread_id"] = "must be a positive forum topic id, or omit / null for the whole chat"
+		}
+	}
 	return validationIfAny("invalid chat", issues)
 }
 
-const chatColumns = `id, edition_id, name, chat_id, enabled, created_at`
+const chatColumns = `id, edition_id, name, chat_id, message_thread_id, enabled, created_at`
 
 func scanChat(row pgx.Row) (*TelegramChat, error) {
 	var c TelegramChat
-	err := row.Scan(&c.ID, &c.EditionID, &c.Name, &c.ChatID, &c.Enabled, &c.CreatedAt)
+	err := row.Scan(&c.ID, &c.EditionID, &c.Name, &c.ChatID, &c.MessageThreadID, &c.Enabled, &c.CreatedAt)
 	switch {
 	case err == nil:
 		return &c, nil
@@ -500,7 +517,9 @@ func scanChat(row pgx.Row) (*TelegramChat, error) {
 	default:
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return nil, httperror.Validation("invalid chat", map[string]string{"chat_id": "is already added"})
+			return nil, httperror.Validation("invalid chat", map[string]string{
+				"chat_id": "this chat and topic combination is already added",
+			})
 		}
 		return nil, httperror.Internal(err)
 	}
@@ -545,8 +564,8 @@ func (s *ScheduleService) CreateChat(ctx context.Context, editionID uuid.UUID, i
 	}
 	var out *TelegramChat
 	err = db.WithTx(ctx, s.pool, func(tx pgx.Tx) error {
-		out, err = scanChat(tx.QueryRow(ctx, `INSERT INTO telegram_chats (organization_id, edition_id, name, chat_id, enabled)
-			VALUES ($1,$2,$3,$4,$5) RETURNING `+chatColumns, orgID, editionID, in.Name, in.ChatID, in.Enabled))
+		out, err = scanChat(tx.QueryRow(ctx, `INSERT INTO telegram_chats (organization_id, edition_id, name, chat_id, message_thread_id, enabled)
+			VALUES ($1,$2,$3,$4,$5,$6) RETURNING `+chatColumns, orgID, editionID, in.Name, in.ChatID, in.MessageThreadID, in.Enabled))
 		if err != nil {
 			return err
 		}
@@ -584,8 +603,8 @@ func (s *ScheduleService) UpdateChat(ctx context.Context, id uuid.UUID, in Teleg
 		if err != nil {
 			return err
 		}
-		out, err = scanChat(tx.QueryRow(ctx, `UPDATE telegram_chats SET name=$2, chat_id=$3, enabled=$4 WHERE id=$1
-			RETURNING `+chatColumns, id, in.Name, in.ChatID, in.Enabled))
+		out, err = scanChat(tx.QueryRow(ctx, `UPDATE telegram_chats SET name=$2, chat_id=$3, message_thread_id=$4, enabled=$5 WHERE id=$1
+			RETURNING `+chatColumns, id, in.Name, in.ChatID, in.MessageThreadID, in.Enabled))
 		if err != nil {
 			return err
 		}

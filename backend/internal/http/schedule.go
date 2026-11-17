@@ -172,6 +172,31 @@ func (h *scheduleHandler) updateItem(w http.ResponseWriter, r *http.Request) {
 	render(w, r, http.StatusOK, sc, err)
 }
 
+func (h *scheduleHandler) listItemRevisions(w http.ResponseWriter, r *http.Request) {
+	itemID, err := parseUUIDParam(r, "item")
+	if err != nil {
+		httperror.Render(w, r, err)
+		return
+	}
+	items, err := h.svc.ListItemRevisions(r.Context(), itemID)
+	render(w, r, http.StatusOK, map[string]any{"items": items}, err)
+}
+
+func (h *scheduleHandler) getItemRevision(w http.ResponseWriter, r *http.Request) {
+	itemID, err := parseUUIDParam(r, "item")
+	if err != nil {
+		httperror.Render(w, r, err)
+		return
+	}
+	revID, err := parseUUIDParam(r, "revision")
+	if err != nil {
+		httperror.Render(w, r, err)
+		return
+	}
+	rev, err := h.svc.GetItemRevision(r.Context(), itemID, revID)
+	render(w, r, http.StatusOK, rev, err)
+}
+
 func (h *scheduleHandler) deleteItem(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "item")
 	if err != nil {
@@ -450,4 +475,56 @@ func (h *scheduleHandler) publicICS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/calendar; charset=utf-8")
 	w.Header().Set("Content-Disposition", `inline; filename="`+p.Edition.Slug+`.ics"`)
 	_, _ = w.Write([]byte(events.ICS(p, h.productName())))
+}
+
+func (h *scheduleHandler) publicSignage(w http.ResponseWriter, r *http.Request) {
+	nextN, err := events.ParseSignageNext(r.URL.Query().Get("next"))
+	if err != nil {
+		httperror.Render(w, r, err)
+		return
+	}
+	at, err := events.ParseSignageAt(r.URL.Query().Get("at"))
+	if err != nil {
+		httperror.Render(w, r, err)
+		return
+	}
+	out, err := h.svc.Signage(r.Context(), chi.URLParam(r, "edition"), at, nextN)
+	if err != nil {
+		httperror.Render(w, r, err)
+		return
+	}
+	// Short private cache: now/next moves with wall time.
+	bucket := out.AsOf.UTC().Unix() / 15
+	etag := fmt.Sprintf(`"%s-v%d-signage-%d"`, out.Edition.ID, out.Version, bucket)
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "private, max-age=15")
+	w.Header().Set("Vary", "Authorization")
+	for _, tag := range strings.Split(r.Header.Get("If-None-Match"), ",") {
+		if strings.TrimSpace(tag) == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (h *scheduleHandler) publicRoomSignage(w http.ResponseWriter, r *http.Request) {
+	nextN, err := events.ParseSignageNext(r.URL.Query().Get("next"))
+	if err != nil {
+		httperror.Render(w, r, err)
+		return
+	}
+	at, err := events.ParseSignageAt(r.URL.Query().Get("at"))
+	if err != nil {
+		httperror.Render(w, r, err)
+		return
+	}
+	out, err := h.svc.SignageRoomView(r.Context(), chi.URLParam(r, "edition"), chi.URLParam(r, "room"), at, nextN)
+	if err != nil {
+		httperror.Render(w, r, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, max-age=15")
+	w.Header().Set("Vary", "Authorization")
+	writeJSON(w, http.StatusOK, out)
 }
