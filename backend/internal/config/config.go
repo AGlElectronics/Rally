@@ -1,4 +1,4 @@
-﻿// Package config loads and validates the backend runtime configuration from
+// Package config loads and validates the backend runtime configuration from
 // environment variables (12-factor). Validation runs once at startup and
 // fails loudly: a misconfigured deployment is better than a silently
 // degraded one.
@@ -122,7 +122,8 @@ type Config struct {
 
 	// HRServiceToken is HR_SERVICE_TOKEN: the token HR's backend sends to
 	// read GET /api/role-catalog. Empty: only staff sign-ins may read it.
-	HRServiceToken string
+	HRServiceToken string
+
 	// StatsPullToken protects GET /api/internal/stats for Stats. Empty disables it.
 	StatsPullToken string
 
@@ -199,10 +200,11 @@ func Load() (*Config, error) {
 
 		PublicScheduleEnabled: getEnvBool("PUBLIC_SCHEDULE_ENABLED", false),
 		PublicAPIBuiltinKey:   getEnv("PUBLIC_API_BUILTIN_KEY", ""),
-		HRServiceToken:        strings.TrimSpace(getEnv("HR_SERVICE_TOKEN", "")),
-		StatsPullToken:    strings.TrimSpace(getEnv("STATS_PULL_TOKEN", "")),
-		TelegramBotToken:      getEnv("TELEGRAM_BOT_TOKEN", ""),
-		TelegramAPIURL:        getEnv("TELEGRAM_API_URL", "https://api.telegram.org"),
+		HRServiceToken:        strings.TrimSpace(getEnv("HR_SERVICE_TOKEN", "")),
+
+		StatsPullToken:   strings.TrimSpace(getEnv("STATS_PULL_TOKEN", "")),
+		TelegramBotToken: getEnv("TELEGRAM_BOT_TOKEN", ""),
+		TelegramAPIURL:   getEnv("TELEGRAM_API_URL", "https://api.telegram.org"),
 
 		CORSAllowedOrigins: splitCSV(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3002")),
 		ShutdownTimeout:    getEnvDuration("SHUTDOWN_TIMEOUT", 15*time.Second),

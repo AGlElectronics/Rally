@@ -28,9 +28,9 @@ type ScheduleSettings struct {
 	Rules          map[string]RuleMode `json:"rules"`
 	// Preview window (read-only draft viewing). Nil opens_at means closed
 	// until staff set a window. PublicURL is what Den quick-links can use.
-	PreviewOpensAt  *time.Time `json:"preview_opens_at,omitempty"`
-	PreviewClosesAt *time.Time `json:"preview_closes_at,omitempty"`
-	PreviewPublicURL string    `json:"preview_public_url,omitempty"`
+	PreviewOpensAt   *time.Time `json:"preview_opens_at,omitempty"`
+	PreviewClosesAt  *time.Time `json:"preview_closes_at,omitempty"`
+	PreviewPublicURL string     `json:"preview_public_url,omitempty"`
 	// PreviewOpen is true when now is inside the configured window.
 	PreviewOpen bool `json:"preview_open"`
 }
