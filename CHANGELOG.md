@@ -6,6 +6,54 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security
+
+- Bumped `golang.org/x/crypto` to v0.59.0 (GO-2026-5932 / openpgp).
+- Dockerfiles declare `HEALTHCHECK`: backends probe `/livez` via
+  `<binary> healthcheck` (distroless has no curl); frontends use `wget` on
+  `:8080`; migrators use `HEALTHCHECK NONE`.
+
+- Frontend nginx base image moved to `nginx/nginx-unprivileged:1.30.7-alpine` (fixes nginx CRITICAL/HIGH CVEs including CVE-2026-121810; old `nginxinc/` registry no longer publishes 1.30.7).
+
+- `STATS_PULL_TOKEN`, when set, must be at least 32 characters (same bar as
+  HR service tokens). Empty still disables the internal stats route.
+
+### Added
+
+- Dev-only Telegram **catch-all** (Compose): with `TELEGRAM_DEV_CATCHALL_CHAT_ID`
+  (and optional topic id) under `APP_ENV=development`, notices are also
+  posted to one test chat prefixed with the intended recipient. Email still
+  goes to Mailpit. Not used in production.
+
+### Fixed
+
+- Organizations list now includes orgs granted only through IdP group
+  bindings (`events-admin` and friends in `access-config.toml`), not just
+  rows in the `memberships` table. Staff who already saw CfP / Schedule in
+  the sidebar no longer get an empty Organizations card.
+- Dashboard copy no longer claims the programme is “not yet implemented”.
+
+### Added
+
+- Telegram announcement targets accept an optional **forum topic**
+  (`message_thread_id`) so posts can go to a specific topic in a
+  Telegram forum group. The same chat id may be registered once per
+  topic. Setup → Telegram shows a Topic id field; see the Rally API
+  announcements section for the curl shape.
+- Public **signage** API on the published programme (HTTPS at the edge):
+  `GET /api/public/v1/schedules/{edition}/signage` and
+  `GET /api/public/v1/schedules/{edition}/rooms/{room}/signage` return
+  now/next per room for digital screens (same API key as the public
+  schedule). Optional `?next=` and `?at=` query parameters.
+- **Staff-approved tags**: propose on an edition (`POST …/tags`), approve or
+  reject with `tag.approve`, autocomplete approved tags (`GET …/tags?q=`).
+  Approved tags attach to schedule items (`tag_ids` on create/patch).
+- **Per-item revision history** (separate from publish versions):
+  `GET /api/v1/schedule-items/{item}/revisions` and `…/revisions/{id}`.
+- **Schedule preview window** on settings (`preview_opens_at`,
+  `preview_closes_at`, `preview_public_url` for Den quick links);
+  `preview_open` reports whether the window is active now.
+
 ## [1.0.0] - 2026-11-12
 
 Needs Den: 1.0.0 or later (Den MAJOR 1).

@@ -1,12 +1,5 @@
 // Package events holds the domain-oriented repository and service seams for
-// Rally's events functions (organizations, conventions, editions,
-// memberships, programme — once the first vertical slice lands).
-//
-// In the scaffold this package is intentionally thin: it exports an
-// OrganizationService that the HTTP layer calls for the Dashboard /
-// Organizations placeholder pages. Larger domain modules (submissions,
-// scheduling, publications) will arrive as separate files inside this
-// package rather than a tangle of new top-level packages.
+// Rally (organizations, conventions, editions, memberships, CfPs, schedule).
 //
 // The name "events" is deliberate — the repository folder is "Rally" but
 // internal code uses the neutral ecosystem vocabulary.
@@ -15,6 +8,7 @@ package events
 import (
 	"context"
 	"errors"
+	"sort"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -32,9 +26,7 @@ type Organization struct {
 	Role        string    `json:"role,omitempty"`
 }
 
-// OrganizationService lists organizations visible to the caller. The
-// scaffold only supports the "list my organizations" read; create / update
-// land with the organization-management vertical slice.
+// OrganizationService lists organizations visible to the caller.
 type OrganizationService struct {
 	pool *pgxpool.Pool
 }
@@ -44,82 +36,109 @@ func NewOrganizationService(pool *pgxpool.Pool) *OrganizationService {
 	return &OrganizationService{pool: pool}
 }
 
-// ListVisible returns the organizations the authenticated user has a
-// membership in, with the highest-privilege role per org. Membership
-// filtering happens in SQL so the service never has to trust a client-sent
-// organization id.
+// roleRank prefers organization_admin when several roles apply to one org
+// (DB assignment plus an IdP group binding, for example).
+func roleRank(role string) int {
+	switch role {
+	case "organization_admin":
+		return 100
+	case "edition_organizer":
+		return 80
+	case "programme_manager":
+		return 70
+	case "reviewer":
+		return 40
+	case "submitter":
+		return 20
+	case "viewer":
+		return 10
+	default:
+		return 0
+	}
+}
+
+// ListVisible returns organizations the caller can see: DB memberships and
+// IdP group bindings from access-config.toml (already resolved onto
+// auth.User.Memberships). Earlier this only joined the memberships table, so
+// staff who only had an events-* group saw an empty Organizations list while
+// the sidebar still showed CfP and Schedule.
 func (s *OrganizationService) ListVisible(ctx context.Context) ([]Organization, error) {
 	user, err := auth.MustFromContext(ctx)
 	if err != nil {
 		return nil, httperror.New(httperror.CodeUnauthorized, "not authenticated")
 	}
+	if len(user.Memberships) == 0 {
+		return []Organization{}, nil
+	}
+
+	bestRole := map[uuid.UUID]string{}
+	ids := make([]uuid.UUID, 0, len(user.Memberships))
+	seen := map[uuid.UUID]bool{}
+	for _, m := range user.Memberships {
+		if !seen[m.OrganizationID] {
+			seen[m.OrganizationID] = true
+			ids = append(ids, m.OrganizationID)
+		}
+		if prev, ok := bestRole[m.OrganizationID]; !ok || roleRank(m.Role) > roleRank(prev) {
+			bestRole[m.OrganizationID] = m.Role
+		}
+	}
 
 	rows, err := s.pool.Query(ctx, `
-		SELECT o.id,
-		       o.slug,
-		       o.display_name,
-		       COALESCE(
-		           -- Deterministic role precedence; refine when the full
-		           -- role catalog settles.
-		           MIN(ra.role) FILTER (
-		               WHERE ra.role = 'organization_admin'
-		           ),
-		           MIN(ra.role)
-		       ) AS role
-		  FROM organizations o
-		  JOIN memberships   m  ON m.organization_id = o.id
-		                       AND m.user_id = $1
-		                       AND m.status  = 'active'
-		  LEFT JOIN role_assignments ra
-		         ON ra.organization_id = o.id
-		        AND ra.user_id         = $1
-		        AND ra.edition_id IS NULL
-		 GROUP BY o.id, o.slug, o.display_name
-		 ORDER BY o.display_name ASC
-	`, user.ID)
+		SELECT id, slug, display_name
+		  FROM organizations
+		 WHERE id = ANY($1)
+		 ORDER BY display_name ASC
+	`, ids)
 	if err != nil {
 		return nil, httperror.Internal(err)
 	}
 	defer rows.Close()
 
-	out := make([]Organization, 0, 4)
+	out := make([]Organization, 0, len(ids))
 	for rows.Next() {
 		var o Organization
-		var role *string
-		if err := rows.Scan(&o.ID, &o.Slug, &o.DisplayName, &role); err != nil {
+		if err := rows.Scan(&o.ID, &o.Slug, &o.DisplayName); err != nil {
 			return nil, httperror.Internal(err)
 		}
-		if role != nil {
-			o.Role = *role
-		}
+		o.Role = bestRole[o.ID]
 		out = append(out, o)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, httperror.Internal(err)
 	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].DisplayName < out[j].DisplayName
+	})
 	return out, nil
 }
 
 // Get returns a single organization the caller can see, or 404 otherwise.
-// Used by handlers that need to resolve the authoritative organization_id
-// for a slug before applying permission checks.
 func (s *OrganizationService) Get(ctx context.Context, id uuid.UUID) (*Organization, error) {
 	user, err := auth.MustFromContext(ctx)
 	if err != nil {
 		return nil, httperror.New(httperror.CodeUnauthorized, "not authenticated")
 	}
+	var role string
+	ok := false
+	for _, m := range user.Memberships {
+		if m.OrganizationID == id {
+			ok = true
+			if roleRank(m.Role) > roleRank(role) {
+				role = m.Role
+			}
+		}
+	}
+	if !ok {
+		return nil, httperror.NotFound("organization")
+	}
 	var o Organization
 	err = s.pool.QueryRow(ctx, `
-		SELECT o.id, o.slug, o.display_name
-		  FROM organizations o
-		  JOIN memberships m
-		    ON m.organization_id = o.id
-		   AND m.user_id = $2
-		   AND m.status = 'active'
-		 WHERE o.id = $1
-	`, id, user.ID).Scan(&o.ID, &o.Slug, &o.DisplayName)
+		SELECT id, slug, display_name FROM organizations WHERE id = $1
+	`, id).Scan(&o.ID, &o.Slug, &o.DisplayName)
 	switch {
 	case err == nil:
+		o.Role = role
 		return &o, nil
 	case errors.Is(err, pgx.ErrNoRows):
 		return nil, httperror.NotFound("organization")

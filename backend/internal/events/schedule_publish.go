@@ -282,6 +282,10 @@ func (s *ScheduleService) Restore(ctx context.Context, editionID uuid.UUID, vers
 				it.StartsAt, it.EndsAt, it.StaffOnly, it.Status, u.ID); err != nil {
 				return httperror.Internal(err)
 			}
+			if err := recordRevision(ctx, tx, orgID, editionID, it.ID, RevisionRestore,
+				fmt.Sprintf("restored from version %d", v.Version), nil, it); err != nil {
+				return err
+			}
 		}
 		if err := touchDraft(ctx, tx, editionID); err != nil {
 			return err
@@ -314,6 +318,8 @@ type PublicItem struct {
 	Color       string     `json:"color"`
 	Status      string     `json:"status"`
 	People      []string   `json:"people"`
+	// Approved tags attached to the item (display names only).
+	Tags []string `json:"tags"`
 }
 
 // PublicSchedule is the read-only programme served to the website.
@@ -421,13 +427,18 @@ func toPublic(v *Version) *PublicSchedule {
 		}
 		pi := PublicItem{ID: it.ID, Title: it.Title, Description: it.Description, StartsAt: it.StartsAt, EndsAt: it.EndsAt,
 			Day: it.StartsAt.In(loc).Format("2006-01-02"), RoomID: it.RoomID, Room: rooms[it.RoomID],
-			EventTypeID: it.EventTypeID, Status: it.Status, People: []string{}}
+			EventTypeID: it.EventTypeID, Status: it.Status, People: []string{}, Tags: []string{}}
 		if it.EventTypeID != nil {
 			t := types[*it.EventTypeID]
 			pi.EventType, pi.Color = t.Name, t.Color
 		}
 		for _, p := range it.People {
 			pi.People = append(pi.People, p.Name)
+		}
+		for _, t := range it.Tags {
+			if t.Status == TagApproved {
+				pi.Tags = append(pi.Tags, t.Display)
+			}
 		}
 		days[pi.Day] = true
 		out.Items = append(out.Items, pi)

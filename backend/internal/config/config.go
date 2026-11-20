@@ -124,6 +124,9 @@ type Config struct {
 	// read GET /api/role-catalog. Empty: only staff sign-ins may read it.
 	HRServiceToken string
 
+	// StatsPullToken protects GET /api/internal/stats for Stats. Empty disables it.
+	StatsPullToken string
+
 	// Telegram bot for live-day announcements. Empty token = dry run: sends
 	// are recorded but nothing leaves the server.
 	TelegramBotToken string
@@ -198,8 +201,10 @@ func Load() (*Config, error) {
 		PublicScheduleEnabled: getEnvBool("PUBLIC_SCHEDULE_ENABLED", false),
 		PublicAPIBuiltinKey:   getEnv("PUBLIC_API_BUILTIN_KEY", ""),
 		HRServiceToken:        strings.TrimSpace(getEnv("HR_SERVICE_TOKEN", "")),
-		TelegramBotToken:      getEnv("TELEGRAM_BOT_TOKEN", ""),
-		TelegramAPIURL:        getEnv("TELEGRAM_API_URL", "https://api.telegram.org"),
+
+		StatsPullToken:   strings.TrimSpace(getEnv("STATS_PULL_TOKEN", "")),
+		TelegramBotToken: getEnv("TELEGRAM_BOT_TOKEN", ""),
+		TelegramAPIURL:   getEnv("TELEGRAM_API_URL", "https://api.telegram.org"),
 
 		CORSAllowedOrigins: splitCSV(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3002")),
 		ShutdownTimeout:    getEnvDuration("SHUTDOWN_TIMEOUT", 15*time.Second),
@@ -244,6 +249,9 @@ func (c *Config) validate() error {
 	}
 	if c.HRServiceToken != "" && len(c.HRServiceToken) < MinServiceTokenLength {
 		errs = append(errs, fmt.Sprintf("HR_SERVICE_TOKEN must be at least %d characters (generate one with: openssl rand -hex 32)", MinServiceTokenLength))
+	}
+	if c.StatsPullToken != "" && len(c.StatsPullToken) < MinServiceTokenLength {
+		errs = append(errs, fmt.Sprintf("STATS_PULL_TOKEN must be at least %d characters (openssl rand -hex 32)", MinServiceTokenLength))
 	}
 
 	if c.S3Enabled {

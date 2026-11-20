@@ -24,6 +24,7 @@ const (
 	ResourceScheduleItem ResourceType = "schedule_item"
 	ResourceAnnouncement ResourceType = "announcement"
 	ResourceChat         ResourceType = "telegram_chat"
+	ResourceTag          ResourceType = "tag"
 )
 
 // Role names recognized by default. The access config file (TOML) may add
@@ -63,6 +64,12 @@ const (
 	// sends announcements.
 	PermScheduleEdit    = "schedule.edit"
 	PermSchedulePublish = "schedule.publish"
+
+	// Tag slice. Anyone with schedule.edit may propose a tag and attach
+	// approved tags to items; tag.approve lifts a proposed tag into the
+	// approved pool or rejects / deletes one, and sets the schedule
+	// preview window Rally admins open for read-only viewing.
+	PermTagApprove = "tag.approve"
 )
 
 // AllPermissions returns every permission the access-config validator will
@@ -76,6 +83,7 @@ func AllPermissions() []string {
 		PermAuditView,
 		PermCfPManage, PermSubmissionReview, PermSubmissionDecide,
 		PermScheduleEdit, PermSchedulePublish,
+		PermTagApprove,
 	}
 }
 
@@ -91,11 +99,13 @@ func DefaultRolePermissions() map[string][]string {
 			PermMemberView, PermAuditView,
 			PermCfPManage, PermSubmissionReview, PermSubmissionDecide,
 			PermScheduleEdit, PermSchedulePublish,
+			PermTagApprove,
 		},
 		RoleProgrammeManager: {
 			PermOrgView, PermEditionView, PermMemberView,
 			PermSubmissionReview, PermSubmissionDecide,
 			PermScheduleEdit, PermSchedulePublish,
+			PermTagApprove,
 		},
 		RoleReviewer: {
 			PermOrgView, PermEditionView,
